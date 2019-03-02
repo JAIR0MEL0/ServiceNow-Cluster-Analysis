@@ -53,6 +53,8 @@ JnJ ITS is looking for alternatives to improve support services reducing the num
 2. Clustering to find out ways to reduce incidents
 3. Find patterns to uncover ways to increase more online chats
 4. Ways to move from L3 to L1 support
+5. Consolidation or reduccion of Support Groups, which will translate into less vendors.
+6. Look for ways to become more preventive and less reactive. Identify causes and club incidents that could reduce reactivive.  This means relability.
 
 ## Data understanding
 
