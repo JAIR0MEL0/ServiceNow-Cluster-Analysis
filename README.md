@@ -46,7 +46,13 @@ chat_log: If of the chat session when user uses instance message with the suppor
 
 ## Business understanding
 
+Business problem:
+JnJ ITS is looking for alternatives to improve support services reducing the number of incidents, the time for resolution, and reduccion of the support cost using shift-left mechanism or any other suggestions that ML could uncover.  Support Vendors always inquiring about predicting support so they can scalate their services based on their workforce.
 
+1. Prediction to forecast demand
+2. Clustering to find out ways to reduce incidents
+3. Find patterns to uncover ways to increase more online chats
+4. Ways to move from L3 to L1 support
 
 ## Data understanding
 
