@@ -14,7 +14,7 @@ region: Region where the Application is supported
 
 prod_line: Category of the Application
 
-opened: Date when the application was opened
+opened: Date when the issue was created or opened
 
 app_category: Category of the Application
 
