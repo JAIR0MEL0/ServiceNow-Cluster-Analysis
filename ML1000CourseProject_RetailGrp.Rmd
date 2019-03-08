@@ -47,8 +47,7 @@ TSdata=read.csv("~/desktop/ML/YORK/CourseProject/Support Tickets Dataset- ML.csv
 Remove any duplicated or missing observations.
 
 ```{r pressure, echo=FALSE}
-#data = data[complete.cases(data),]
-
+nrow(TSdata)
 TSdata <- distinct(TSdata)
 
 ```
@@ -99,13 +98,16 @@ Let's chart the data to understand more about the variables associated to the su
 Let's review what the data can tell us about supporting applications for JTS:
 
 
-```{r charts, echo=FALSE}
+```{r sup_level, echo=FALSE}
 
-
-
+barplot(table(TSdata$grp_level))
 
 ```
+```{r sup_level, echo=FALSE}
 
+barplot(table(TSdata$grp_level))
+
+```
 
 ## Data Preparation
 
@@ -120,9 +122,17 @@ TSdata <- select(TSdata,-call_log)
 TSdata <- select(TSdata,-chat_log)
 ```
 
-We will remove the words Priority and Level to allow the numberic be part of the analysis:
+We will remove the words "Priority"" and "Level"" to allow the numberic be part of the analysis:
 ```{r removing, echo=FALSE}
+
+
+#Since this is a snapshot of today's tickets status, 455 tickets have no Resolution time.  Those observations can be removed from the dataset
+
+
+
+#Removing the word priority so we can use it as Number
 TSdata$priority <-  as.numeric(gsub("Priority ", "", TSdata$priority))
+#Removing the word level so we can use it as number
 TSdata$grp_level <- as.numeric(gsub("Level ", "", TSdata$grp_level))
 
 ```
@@ -133,6 +143,13 @@ Now we will create the numeric representation of the Date variables:
 TSdata$opened_num <- as.numeric(as.POSIXct(TSdata$opened))
 TSdata$closed_num <- as.numeric(as.POSIXct(TSdata$Closed))
 TSdata$resolved_num <- as.numeric(as.POSIXct(gsub("[a-zA-Z ]", "", TSdata$resolved)))
+
+#Creation of a new variable called MTTR (Mean Time To Resolution)= Resolved time - Open Time
+TSdata$MTTR <- TSdata$resolved_num - TSdata$close_num
+
+
+
+
 
 ```
 ## Supervised Learning
