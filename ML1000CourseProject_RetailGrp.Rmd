@@ -1,11 +1,12 @@
 ---
 title: "Course Project ML1000 - Retail Group"
+author: "Retail Group: Jairo Melo, Vikram Khade, Ignacio Palma, Mahboob Jamil"
 output: github_document
 Objective: Service Desk Tickets Analysis to resolved business questions about improving reliability while reducing cost
 ---
 
 ```{r libraries, include=FALSE}
-#knitr::opts_chunk$set(echo = TRUE)
+#knitr::opts_chunk$set(echo = FALSE)
 
 library(lattice)
 library(ggplot2)
@@ -100,13 +101,28 @@ Let's review what the data can tell us about supporting applications for JTS:
 
 ```{r sup_level, echo=FALSE}
 
-barplot(table(TSdata$grp_level))
+barplot(table(TSdata$res_category))
+
 
 ```
 ```{r sup_level, echo=FALSE}
 
-barplot(table(TSdata$grp_level))
+pieGRP <- table(TSdata$grp_level)
+pct <- round(pieGRP/sum(pieGRP)*100)
+lbls <- paste(names(pieGRP), "\n", pieState, sep="")
+lbls <- paste(lbls, pct) # add percents to labels 
+lbls <- paste(lbls,"%",sep="") # ad % to labels 
+pie(pieGRP,labels = lbls, col=rainbow(length(lbls)),main="Pie by Group Level")
+pieGRP
 
+```
+
+
+```{r support group, echo=FALSE}
+plot(table(TSdata$sup_grp))
+```
+```{r support group, echo=FALSE}
+plot(table(TSdata$sup_grp))
 ```
 
 ## Data Preparation
