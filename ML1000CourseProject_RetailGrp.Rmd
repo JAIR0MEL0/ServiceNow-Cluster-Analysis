@@ -1,6 +1,6 @@
 ---
 title: "Course Project ML1000 - Retail Group"
-author: "Retail Group: Jairo Melo, Vikram Khade, Ignacio Palma, Mahboob Jamil"
+author: "Retail Group: Ignacio Palma, Jairo Melo, Mahboob Jamil, Vikram Khade"
 output: github_document
 Objective: Service Desk Tickets Analysis to resolved business questions about improving reliability while reducing cost
 ---
@@ -39,6 +39,7 @@ You can include R code in the document as follows:
 ```{r loadingData, echo=FALSE}
 
 getwd();
+#setwd('/Users/jairomelo/Desktop/ML/YORK/Assigment2/CourseProject')
 TSdata=read.csv("~/desktop/ML/YORK/CourseProject/Support Tickets Dataset- ML.csv", header = TRUE, dec = ".")
 
 ```
@@ -50,6 +51,9 @@ Remove any duplicated or missing observations.
 ```{r pressure, echo=FALSE}
 nrow(TSdata)
 TSdata <- distinct(TSdata)
+
+#Keeping only Observations where the tickets are Resolved.  Open tickets are not relevant.
+TSdata <- TSdata[TSdata$resolved != '',]
 
 ```
 
@@ -136,6 +140,10 @@ chat_log
 TSdata <- select(TSdata,-incident)
 TSdata <- select(TSdata,-call_log)
 TSdata <- select(TSdata,-chat_log)
+#TSdata <- select(TSdata,-impact)
+TSdata <- select(TSdata,-region)
+TSdata <- select(TSdata,-pend_time)
+TSdata <- select(TSdata,-cust_time)
 ```
 
 We will remove the words "Priority"" and "Level"" to allow the numberic be part of the analysis:
@@ -144,56 +152,62 @@ We will remove the words "Priority"" and "Level"" to allow the numberic be part 
 
 #Since this is a snapshot of today's tickets status, 455 tickets have no Resolution time.  Those observations can be removed from the dataset
 
+#Transforming Urgency where 1 is the lowest and 3 is the highest
+summary(TSdata$urgency)
+TSdata$urgency <- ifelse(TSdata$urgency == 'Low',1,ifelse(TSdata$priority == 'Medium 3',2,3))
+summary(TSdata$urgency)
 
+#Transforming Priority to Lowest 1 and hiest 3
+summary(TSdata$priority)
+TSdata$priority <- ifelse(TSdata$priority == 'Priority 4',1,ifelse(TSdata$priority == 'Priority 3',2,3))
+summary(TSdata$priority)
 
-#Removing the word priority so we can use it as Number
-TSdata$priority <-  as.numeric(gsub("Priority ", "", TSdata$priority))
-#Removing the word level so we can use it as number
+#Transforming Group Level to number and removing any observations different than the 3 grp levels
+summary(TSdata$grp_level)
+TSdata <- subset(TSdata, grp_level=='Level 1' | grp_level=='Level 2' | grp_level=='Level 3')
 TSdata$grp_level <- as.numeric(gsub("Level ", "", TSdata$grp_level))
+summary(TSdata$grp_level)
 
 ```
 
 Now we will create the numeric representation of the Date variables:
 
 ```{r dat_num, echo=FALSE}
-TSdata$opened_num <- as.numeric(as.POSIXct(TSdata$opened))
-TSdata$closed_num <- as.numeric(as.POSIXct(TSdata$Closed))
-TSdata$resolved_num <- as.numeric(as.POSIXct(gsub("[a-zA-Z ]", "", TSdata$resolved)))
 
 #Creation of a new variable called MTTR (Mean Time To Resolution)= Resolved time - Open Time
-TSdata$MTTR <- TSdata$resolved_num - TSdata$close_num
 
-
-
-
+TSdata$MTTR <- difftime(TSdata$resolved,TSdata$opened,tz="GMT",units="secs")
 
 ```
 ## Supervised Learning
 
-We will use supervised algorithms to model the 
+Our target variable will be Level2 and Leve3 of Support Group Level.  In order to predict more accurally how many L2 Resources we will need next year, we will create a target value called Level2 and train are predictor.
 
 ```{r supervised, echo=FALSE}
 
-TSdata$level3 <- ifelse(TSdata$grp_level == 'Level 3',1,0)
-TSdata$level2 <- ifelse(TSdata$grp_level == 'Level 2',1,0)
+TSdata$level3 <- ifelse(TSdata$grp_level == 3,1,0)
+TSdata$level2 <- ifelse(TSdata$grp_level == 2,1,0)
 
+```
+
+We will use supervised algorithms to model the 
 
 #This is to use the same data set for Training and Test
-splitIndex <- createDataPartition(TSdata[,'grp_level'], p = .75, list = FALSE, times = 1)
+
+```{r supervised, echo=FALSE}
+splitIndex <- createDataPartition(TSdata[,'grp_level2'], p = .75, list = FALSE, times = 1)
 trainDF <- TSdata[ splitIndex,]
 testDF  <- TSdata[-splitIndex,]
 summary(trainDF)
 summary(testDF)
-
-
-
 
 # a) Linear Discriminant Analysis
 trctl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE)
 metric <- "Accuracy"
 
 set.seed(152)
-fit.lda <- train(level3 ~ res_category + cust_time + pend_time + application + region, data=trainDF, method="lda", metric=metric, trControl=trctl)
+fit.lda <- train(level2 ~ application + prod_line + priority, app_category + res_category + cust_time + pend_time + application + region, data=trainDF, method="lda", metric=metric, trControl=trctl)
+
 # b) Nonlinear algorithms Classification Tree / Recursive Partitioning
 set.seed(152)
 fit.cart <- train(level3 ~ res_category + cust_time + pend_time + application + region, data=trainDF, method="rpart", metric=metric, trControl=trctl)
@@ -202,285 +216,37 @@ fit.cart <- train(level3 ~ res_category + cust_time + pend_time + application + 
 set.seed(152)
 fit.rf <- train(level3 ~ res_category + cust_time + pend_time + application + region, data=trainDF, method="rf", metric=metric, trControl=trctl)
   
-
+```
 ## Evalutate model
 #################################################
 #summarize accuracy of models (Training)
+```{r}
 results <- resamples(list(lda=fit.lda, cart=fit.cart, rf=fit.rf))
 summary(results)
 
 ## Visualize the accuracy of the models
 dotplot(results)
-
+```
 
 ##Let's make a prediction (accuracy of testing dataset)
+
 #a) Linear Discriminant Analysis and Confusion Matrix
+```{r}
 predictions <- predict(fit.lda, testDF)
 head(predictions)
 confusionMatrix(predictions,testDF$state)
-
+```
 #b) Classification Tree / Recursive Partitioning and Confusion Matrix
+```{r}
 predictions <- predict(fit.cart, testDF)
 head(predictions)
 confusionMatrix(predictions,testDF$state)
-
+```
 #c) Final algorithm Random Forest and confusion matrix
+```{r}
 predictions <- predict(fit.rf, testDF)
 head(predictions)
 confusionMatrix(predictions,testDF$state)
 
 ```
 
-# Unsuperised Algorithms
-
-Let's use the Unsupervised algorithms to identify potential paterns which could drive the initiatives to reduce cost and improve reliability
-
-```{r unsupervised, echo=FALSE}
-WRclData <- data
-```
-
-## Principal Component
-
-Naively apply principal components analysis to raw data and plot
-
-```{r, echo=FALSE}
-
-pc <- princomp(WRclData)
-plot(pc)
-
-```
-
-First component dominates greatly. What are the loadings?
-
-```{r, echo=FALSE}
-summary(pc) # 1 component has > 99% variance
-loadings(pc) # Can see all variance is in the range in miles 
-
-
-# verify by plotting variance of columns
-mar <- par()$mar
-par(mar=mar+c(0,5,0,0))
-barplot(sapply(WRdata, var), horiz=T, las=1, cex.names=0.8)
-barplot(sapply(WRdata, var), horiz=T, las=1, cex.names=0.8, log='x')
-par(mar=mar)
-
-
-#As we don’t want the clustering algorithm to depend to an arbitrary variable unit, we start by scaling/standardizing the data using the R function scale:
-WRclData <- scale(WRclData)
-
-# Verify variance is uniform
-plot(sapply(WRclData, var))
-
-
-
-# Proceed with principal components
-pc <- princomp(WRclData)
-plot(pc)
-plot(pc, type='l')
-summary(pc) # 4 components is both 'elbow' and explains >85% variance
-
-# Get principal component vectors using prcomp instead of princomp
-pc <- prcomp(WRclData)
-
-# First for principal components
-comp <- data.frame(pc$x[,0:1])
-# Plot
-plot(comp, pch=16, col=rgb(0,0,0,0.5))
-
-
-#K-Means
-
-# Determine number of clusters
-wss <- (nrow(WRclData)-1)*sum(apply(WRclData,2,var))
-for (i in 2:15) wss[i] <- sum(kmeans(WRclData,
-                                     centers=i)$withinss)
-plot(1:15, wss, type="b", xlab="Number of Clusters",
-     ylab="Within groups sum of squares")
-
-# From scree plot elbow occurs at k = 5
-# Apply k-means with k=5
-k <- kmeans(comp, 5, nstart=25, iter.max=1000)
-
-library(RColorBrewer)
-library(scales)
-palette(alpha(brewer.pal(9,'Set1'), 0.5))
-plot(comp, col=k$clust, pch=16)
-
-# Cluster sizes
-sort(table(k$clust))
-clust <- names(sort(table(k$clust)))
-
-# First cluster
-row.names(data[k$clust==clust[1],])
-# Second Cluster
-row.names(data[k$clust==clust[2],])
-# Third Cluster
-row.names(data[k$clust==clust[3],])
-# Fourth Cluster
-row.names(data[k$clust==clust[4],])
-
-# Compare Variety by cluster in boxplot
-boxplot(WRclData$points ~ k$cluster,
-        xlab='Cluster', ylab='Points',
-        main='Points by Cluster')
-
-plot(WRdata[k$clust==clust[4],'variety'])
-
-
-# Dissimilarity matrix
-WRdiss <- dist(WRclData, method = "euclidean")
-
-##############   1.0  Hierarchical clustering using Complete Linkage   ###############
-WRhc_hclust <- hclust(WRdiss, method = "complete" )
-
-# Plot the obtained dendrogram
-plot(WRhc_hclust, cex = 0.6, hang = -1)
-
-
-
-#As an alternatively, we can use the agnes function which behaves very similar. 
-#We can also get the agglomerative coefficient with agnes function.
-#The agglomerative coefficient measures the amount of clustering structure found 
-#(values closer to 1 suggest strong clustering structure).
-
-#############   2.0 Compute with agnes   ###################
-WRhc_agnes <- agnes(WRclData, method = "complete")
-
-# Agglomerative coefficient
-WRhc_agnes$ac
-##[1] 0.9996042
-
-# The Agglomerative coefficient allows us to find certain hierarchical clustering methods
-# that can identify stronger clustering structures.  Here we see that Ward’s method 
-# identifies the strongest clustering structure of the four methods assessed.
-
-# methods to assess
-m <- c( "average", "single", "complete", "ward")
-names(m) <- c( "average", "single", "complete", "ward")
-
-# function to compute coefficient
-ac <- function(x) {
-  agnes(WRclData, method = x)$ac
-}
-
-map_dbl(m, ac)
-#average    single  complete      ward 
-#0.9994602 0.9985469 0.9996042 0.9998740 
-
-
-
-###########   3.0 Similar to before we can visualize the dendrogram:  ###########
-
-WRhc_agnes_ward <- agnes(WRclData, method = "ward")
-pltree(WRhc_agnes_ward, cex = 0.6, hang = -1, main = "Dendrogram of agnes") 
-
-## Divisive 
-
-##############      4.0   Compute divisive hierarchical clustering       ###################
-WRhc_diana <- diana(WRclData)
-
-# Divise coefficient; amount of clustering structure found
-WRhc_diana$dc
-## [1] 0.9995645
-
-# plot dendrogram
-pltree(WRhc_diana, cex = 0.6, hang = -1, main = "Dendrogram of diana")
-
-#The height of the cut to the dendrogram controls the number of clusters obtained. 
-#It plays the same role as the k in k-means clustering. In order to identify sub-groups (i.e. clusters), 
-#we can cut the dendrogram with cutree:
-
-#Conclusion of diana is that it works similar to agnes.
-
-############       5.0 Ward's method           #############
-
-#In the previous analysis, each leaf of the Dendrogram corresponds to one observation. As we move up the tree, 
-#observations that are similar to each other are combined into branches, which are themselves fused at a higher
-#height.
-
-#The height of the fusion, provided on the vertical axis, indicates the (dis)similarity between two observations.
-#The higher the height of the fusion, the less similar the observations are. 
-#Note: conclusions about the proximity of two observations can only be based on the height where branches 
-#containing those two observations first are fused. We cannot use the proximity of two observations 
-#along the horizontal axis as a criteria of their similarity.
-
-
-WRhc_wardD2 <- hclust(WRdiss, method = "ward.D2" )
-
-# Cut tree into 4 groups
-sub_grp <- cutree(WRhc_wardD2, k = 4)
-
-# Number of members in each cluster
-table(sub_grp)
-sub_grp
-#    1    2    3    4 
-#  824 2542 1628    6 
-
-
-
-#We can also use the cutree output to add the the cluster each observation belongs to to our 
-#original data.
-##Limiting the original data to 5000 as per Clustering analysis.  This is for Mutate to work
-data <- WRdata[1:5000,]
-
-
-data %>%
-  mutate(cluster = sub_grp) %>%
-  head
-
-
-#It’s also possible to draw the dendrogram with a border around the 4 clusters. 
-#The argument border is used to specify the border colors for the rectangles:
-
-plot(WRhc_wardD2, cex = 0.6)
-rect.hclust(WRhc_wardD2, k = 4, border = 2:5)
-
-
-####################    6.0      Visualize     ########################
-
-#fviz_cluster function from the factoextra package helps to visualize the result of a similar clustering
-#as k-means, 
-fviz_cluster(list(data = WRclData, cluster = sub_grp))
-
-#Cutree with agnes and diana:
-
-# Cut agnes() tree into 4 groups
-WRhc_a <- agnes(WRclData, method = "ward")
-cutree(as.hclust(WRhc_a), k = 4)
-
-# Cut diana() tree into 4 groups
-WRhc_d <- diana(WRclData)
-cutree(as.hclust(WRhc_d), k = 4)
-
-
-#####################    7.0 Determining Optimal Clusters     #########################
-
-# 8.1 Elbow Method
-#To perform the elbow method we just need to change the second argument in fviz_nbclust to FUN = hcut.
-
-fviz_nbclust(WRclData, FUN = hcut, method = "wss")
-
-# 8.2 Average Silhouette Method
-#To perform the average silhouette method we follow a similar process.
-
-fviz_nbclust(WRclData, FUN = hcut, method = "silhouette")
-#Clustering k = 1,2,..., K.max (= 10): .. done
-#Bootstrapping, b = 1,2,..., B (= 50)  [one "." per sample]:
-#  .................................................. 50 
-
-
-plot(WRdata[k$clust==clust[2],'variety'])
-
-
-
-# 8.3 Gap Statistic Method
-#And the process is quite similar to perform the gap statistic method.
-
-gap_stat <- clusGap(WRclData, FUN = hcut, nstart = 25, K.max = 10, B = 50)
-#Clustering k = 1,2,..., K.max (= 10): .. done
-#Bootstrapping, b = 1,2,..., B (= 50)  [one "." per sample]:
-#  .................................................. 50 
-
-fviz_gap_stat(gap_stat)
-
-```
