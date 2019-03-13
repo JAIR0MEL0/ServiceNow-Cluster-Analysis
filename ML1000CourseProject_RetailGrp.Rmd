@@ -13,16 +13,20 @@ library(ggplot2)
 library(caret)
 library(randomForest)
 library(dplyr)
-
 library(tidyverse)  # data manipulation
 library(cluster)    # clustering algorithms
 library(factoextra) # clustering visualization
 library(dendextend) # for comparing two dendrograms
-
+library(fpc)
 library(stats)    #   clustering algorithms
 library(gower) # for using Gower to introduce categorical values with Hierarchical CLustering
 library(StatMatch) # for using Gower to introduce categorical values with Hierarchical CLustering
-
+library(NbClust)
+library(stringi)
+library(RColorBrewer)
+library(scales)
+library(rpart)
+library(rpart.plot)
 
 ```
 
@@ -40,20 +44,25 @@ You can include R code in the document as follows:
 
 getwd();
 #setwd('/Users/jairomelo/Desktop/ML/YORK/Assigment2/CourseProject')
-TSdata=read.csv("~/desktop/ML/YORK/CourseProject/Support Tickets Dataset- ML.csv", header = TRUE, dec = ".")
+sdata=read.csv("~/desktop/ML/YORK/CourseProject/Support Tickets Dataset- ML.csv", header = TRUE, dec = ".")
 
 ```
 
 ## Cleaning the data
-
-Remove any duplicated or missing observations.
-
+Remove any duplicated or missing observations if there is any.
 ```{r pressure, echo=FALSE}
-nrow(TSdata)
-TSdata <- distinct(TSdata)
+nrow(sdata)
+sdata <- distinct(sdata)
 
-#Keeping only Observations where the tickets are Resolved.  Open tickets are not relevant.
-TSdata <- TSdata[TSdata$resolved != '',]
+#Removing observations where tickets are not closed
+#TSdata <- TSdata[TSdata$resolved != '',]
+sdata <- sdata[which(sdata$resolved != "" ),]
+sdata <- sdata[which(sdata$res_category != "" ),]
+nrow(sdata)
+
+#Though sdata is complete, We check if some rows containing NULL or weid entries are caught by this command.
+sum(!complete.cases(sdata))
+
 
 ```
 
@@ -105,13 +114,13 @@ Let's review what the data can tell us about supporting applications for JTS:
 
 ```{r sup_level, echo=FALSE}
 
-barplot(table(TSdata$res_category))
+barplot(table(sdata$app_category))
 
 
 ```
 ```{r sup_level, echo=FALSE}
 
-pieGRP <- table(TSdata$grp_level)
+pieGRP <- table(sdata$grp_level)
 pct <- round(pieGRP/sum(pieGRP)*100)
 lbls <- paste(names(pieGRP), "\n", pieState, sep="")
 lbls <- paste(lbls, pct) # add percents to labels 
@@ -123,11 +132,19 @@ pieGRP
 
 
 ```{r support group, echo=FALSE}
-plot(table(TSdata$sup_grp))
+plot(table(sdata$priority))
 ```
 ```{r support group, echo=FALSE}
-plot(table(TSdata$sup_grp))
+plot(table(sdata$grp_level))
 ```
+
+Plot by Resolution Category
+
+```{r support group, echo=FALSE}
+plot(table(sdata$res_category))
+```
+
+
 
 ## Data Preparation
 
@@ -137,36 +154,44 @@ call_log
 chat_log
 
 ```{r removefield, echo=FALSE}
-TSdata <- select(TSdata,-incident)
-TSdata <- select(TSdata,-call_log)
-TSdata <- select(TSdata,-chat_log)
-#TSdata <- select(TSdata,-impact)
-TSdata <- select(TSdata,-region)
-TSdata <- select(TSdata,-pend_time)
-TSdata <- select(TSdata,-cust_time)
+
+
+#Remove irrelevant features
+sdata <- select(sdata,-incident)
+sdata <- select(sdata,-cust_time)
+sdata <- select(sdata,-pend_time)
+sdata <- select(sdata,-call_log)
+sdata <- select(sdata,-chat_log)
+sdata <- select(sdata,-Closed)
 ```
 
 We will remove the words "Priority"" and "Level"" to allow the numberic be part of the analysis:
 ```{r removing, echo=FALSE}
+#Removing any other groups that re not under ITSM Governance
+sdata <- subset(sdata, grp_level=='Level 1' | grp_level=='Level 2' | grp_level=='Level 3')
 
 
-#Since this is a snapshot of today's tickets status, 455 tickets have no Resolution time.  Those observations can be removed from the dataset
+sdata["impactN"] <- "NA"
+sdata[sdata$impact=="Limited","impactN"] <- as.numeric(1) 
+sdata[sdata$impact=="Large","impactN"] <- as.numeric(2)
+sdata[sdata$impact=="Widespread","impactN"] <- as.numeric(3)
 
-#Transforming Urgency where 1 is the lowest and 3 is the highest
-summary(TSdata$urgency)
-TSdata$urgency <- ifelse(TSdata$urgency == 'Low',1,ifelse(TSdata$priority == 'Medium 3',2,3))
-summary(TSdata$urgency)
+sdata["urgencyN"] <- "NA"
+sdata[sdata$urgency=="Low","urgencyN"] <- as.numeric(1) 
+sdata[sdata$urgency=="Medium","urgencyN"] <- as.numeric(2)
+sdata[sdata$urgency=="High","urgencyN"] <- as.numeric(3)
 
-#Transforming Priority to Lowest 1 and hiest 3
-summary(TSdata$priority)
-TSdata$priority <- ifelse(TSdata$priority == 'Priority 4',1,ifelse(TSdata$priority == 'Priority 3',2,3))
-summary(TSdata$priority)
+sdata["priorityN"] <- "NA"
+sdata[sdata$priority=="Priority 4","priorityN"] <- as.numeric(1) 
+sdata[sdata$priority=="Priority 3","priorityN"] <- as.numeric(2)
+sdata[sdata$priority=="Priority 2","priorityN"] <- as.numeric(3)
 
-#Transforming Group Level to number and removing any observations different than the 3 grp levels
-summary(TSdata$grp_level)
-TSdata <- subset(TSdata, grp_level=='Level 1' | grp_level=='Level 2' | grp_level=='Level 3')
-TSdata$grp_level <- as.numeric(gsub("Level ", "", TSdata$grp_level))
-summary(TSdata$grp_level)
+sdata$impactN <- as.numeric(sdata$impactN)
+sdata$urgencyN <- as.numeric(sdata$urgencyN)
+sdata$priorityN <- as.numeric(sdata$priorityN)
+
+
+nrow(sdata)
 
 ```
 
@@ -176,17 +201,189 @@ Now we will create the numeric representation of the Date variables:
 
 #Creation of a new variable called MTTR (Mean Time To Resolution)= Resolved time - Open Time
 
-TSdata$MTTR <- difftime(TSdata$resolved,TSdata$opened,tz="GMT",units="secs")
+sdata$MTTR <- difftime(sdata$resolved,sdata$opened,tz="GMT",units="secs")
+
+#Priority 1 is the lowest and Priority 3 is the highest
+
+sdata$SLA <- ifelse(sdata$priorityN == 3 & sdata$MTTR < 28801, "Gold", ifelse(sdata$priorityN == 2 & sdata$MTTR < 144001, "Silver", ifelse(sdata$priorityN == 1 & sdata$MTTR < 288001, "Bronze",ifelse(sdata$priorityN == 1 & sdata$MTTR < 432001, "Iron", "FAILED"))))
+
+sdata$SLA <- factor(sdata$SLA)
+
+summary(sdata$SLA)
+
+pieGRP <- table(sdata$SLA)
+pct <- round(pieGRP/sum(pieGRP)*100)
+lbls <- paste(names(pieGRP), "\n", pieState, sep="")
+lbls <- paste(lbls, pct) # add percents to labels 
+lbls <- paste(lbls,"%",sep="") # ad % to labels 
+pie(pieGRP,labels = lbls, col=rainbow(length(lbls)),main="Pie by SLA")
+pieGRP
 
 ```
-## Supervised Learning
+{
+```{r}
 
-Our target variable will be Level2 and Leve3 of Support Group Level.  In order to predict more accurally how many L2 Resources we will need next year, we will create a target value called Level2 and train are predictor.
+#convert dates to date objects
+sdata["open_date"] <- "NA"
+sdata["open_date"] <- as.Date(as.character(sdata[,"opened"]),"%Y-%m-%d")
+sdata["resolve_date"] <- "NA"
+sdata["resolve_date"] <- as.Date(as.character(sdata[,"resolved"]),"%Y-%m-%d")
 
-```{r supervised, echo=FALSE}
+#Calculate days required to close a ticket
+sdata["ndays"] <- "NA"
+sdata["ndays"] <- as.numeric(sdata[,"resolve_date"] - sdata[,"open_date"])
 
-TSdata$level3 <- ifelse(TSdata$grp_level == 3,1,0)
-TSdata$level2 <- ifelse(TSdata$grp_level == 2,1,0)
+
+
+```
+
+
+```{r}
+
+#Convert ordinal level to numeric and save in new feature
+sdata["levelN"] <- as.numeric(0)
+sdata[sdata$grp_level=="Level 1","levelN"] <- as.numeric(1) 
+sdata[sdata$grp_level=="Level 2","levelN"] <- as.numeric(2)
+sdata[sdata$grp_level=="Level 3","levelN"] <- as.numeric(3)
+
+#drop low frequency level for certain features. Threshold = 2.5%
+perc <- round(nrow(sdata)*2.5/100)
+
+tt <- table(sdata$app_category)
+rare_levels <- names(tt)[tt<perc]
+sdata <- subset(sdata,!app_category %in% rare_levels)
+sdata$app_category <- factor(sdata$app_category)
+
+tt <- table(sdata$res_category)
+rare_levels <- names(tt)[tt<perc]
+sdata <- subset(sdata,!res_category %in% rare_levels)
+sdata$res_category <- factor(sdata$res_category)
+
+tt <- table(sdata$region)
+rare_levels <- names(tt)[tt<perc]
+sdata <- subset(sdata,!region %in% rare_levels)
+sdata$region <- factor(sdata$region)
+
+
+```
+
+```{r sup_level, echo=FALSE}
+
+
+
+```
+
+
+
+
+```{r}
+savedir <- ""
+
+pp <- ggplot(sdata, aes(x=application)) + geom_bar(aes(y=..count../sum(..count..)),col='violet',fill='violet') + 
+  coord_flip()
+
+pp <- ggplot(sdata, aes(x=sup_grp)) + geom_bar(aes(y=..count../sum(..count..)),col='coral4',fill='coral4') + 
+  coord_flip()
+
+fnm <- paste(c(savedir,'app_category_hori.pdf'),collapse='')
+
+pdf(fnm)
+pp <- ggplot(sdata, aes(x=app_category)) + geom_bar(aes(y=..count../sum(..count..)),col='coral4',fill='coral4') + 
+     coord_flip() 
+print(pp)
+dev.off()
+
+fnm <- paste(c(savedir,'priority_hori.pdf'),collapse='')
+pdf(fnm)
+pp <- ggplot(sdata, aes(x=priority)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='chocolate') + 
+   coord_flip()
+print(pp)
+dev.off()
+
+fnm <- paste(c(savedir,'priorityN_hori.pdf'),collapse='')
+pdf(fnm)
+pp <- ggplot(sdata, aes(x=priorityN)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='chocolate') + 
+  coord_flip()
+print(pp)
+dev.off()
+
+fnm <- paste(c(savedir,'res_category_hori.pdf'),collapse='')
+pdf(fnm)
+pp <- ggplot(sdata, aes(x=res_category)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='deeppink') + 
+  coord_flip()
+print(pp)
+dev.off()
+
+fnm <- paste(c(savedir,'urgency_hori.pdf'),collapse='')
+pdf(fnm)
+pp <- ggplot(sdata, aes(x=urgency)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='deeppink') + 
+  coord_flip()
+print(pp)
+dev.off()
+
+fnm <- paste(c(savedir,'urgencyN_hori.pdf'),collapse='')
+pdf(fnm)
+pp <- ggplot(sdata, aes(x=urgencyN)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='deeppink') + 
+  coord_flip()
+print(pp)
+dev.off()
+
+
+
+fnm <- paste(c(savedir,'prod_line_hori.pdf'),collapse='')
+pdf(fnm)
+pp <- ggplot(sdata, aes(x=prod_line)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='firebrick1') + 
+  coord_flip()
+print(pp)
+dev.off()
+
+fnm <- paste(c(savedir,'impact_hori.pdf'),collapse='')
+pdf(fnm)
+pp <- ggplot(sdata, aes(x=impact)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='goldenrod') + 
+  coord_flip()
+print(pp)
+dev.off()
+
+fnm <- paste(c(savedir,'impactN_hori.pdf'),collapse='')
+pdf(fnm)
+pp <- ggplot(sdata, aes(x=impactN)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='goldenrod') + 
+  coord_flip()
+print(pp)
+dev.off()
+
+fnm <- paste(c(savedir,'grp_level_hori.pdf'),collapse='')
+pdf(fnm)
+pp <- ggplot(sdata, aes(x=grp_level)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='deepskyblue') + 
+      coord_flip() 
+print(pp)
+dev.off()
+
+fnm <- paste(c(savedir,'region_hori.pdf'),collapse='')
+pdf(fnm)
+pp <- ggplot(sdata, aes(x=region)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='darkorange') + 
+  coord_flip() 
+print(pp)
+dev.off()
+
+
+
+
+#Since priority and urgency are highly correlated (0.89) urgency is dropped from further analysis.
+sdata <- select(sdata,-urgencyN)
+sdata <- select(sdata,-urgency)
+
+
+```
+
+# Supervised Learning
+
+
+##Feature selection
+Let's run a random forest to quantify the relative importance of these features
+```{r}
+set.seed(719)
+rfImp <- randomForest(SLA ~ priority + app_category + res_category + grp_level + region + prod_line, data = sdata, ntree = 100, importance = TRUE)
+importance(rfImp,type=2)
 
 ```
 
@@ -195,58 +392,52 @@ We will use supervised algorithms to model the
 #This is to use the same data set for Training and Test
 
 ```{r supervised, echo=FALSE}
-splitIndex <- createDataPartition(TSdata[,'grp_level2'], p = .75, list = FALSE, times = 1)
-trainDF <- TSdata[ splitIndex,]
-testDF  <- TSdata[-splitIndex,]
-summary(trainDF)
-summary(testDF)
-
-# a) Linear Discriminant Analysis
-trctl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE)
-metric <- "Accuracy"
+splitIndex <- createDataPartition(sdata[,'SLA'], p = .75, list = FALSE, times = 1)
+trainDF <- sdata[ splitIndex,]
+testDF  <- sdata[-splitIndex,]
 
 set.seed(152)
-fit.lda <- train(level2 ~ application + prod_line + priority, app_category + res_category + cust_time + pend_time + application + region, data=trainDF, method="lda", metric=metric, trControl=trctl)
 
-# b) Nonlinear algorithms Classification Tree / Recursive Partitioning
-set.seed(152)
-fit.cart <- train(level3 ~ res_category + cust_time + pend_time + application + region, data=trainDF, method="rpart", metric=metric, trControl=trctl)
-  
-# c) Final algorithm Random Forest
-set.seed(152)
-fit.rf <- train(level3 ~ res_category + cust_time + pend_time + application + region, data=trainDF, method="rf", metric=metric, trControl=trctl)
-  
+rparTree <- rpart(SLA ~ priority + app_category + res_category + grp_level + region, data=trainDF, control = rpart.control(cp = 0.0001))
+
 ```
-## Evalutate model
+## Visualize model
 #################################################
-#summarize accuracy of models (Training)
 ```{r}
-results <- resamples(list(lda=fit.lda, cart=fit.cart, rf=fit.rf))
-summary(results)
+printcp(rparTree)
 
-## Visualize the accuracy of the models
-dotplot(results)
+bestcp <- rparTree$cptable[which.min(rparTree$cptable[,"xerror"]),"CP"]
+
+# Step3: Prune the tree using the best cp.
+rparTree.pruned <- prune(rparTree, cp = bestcp)
+
+# confusion matrix (training data)
+conf.matrix <- table(sdata$SLA, predict(rparTree.pruned,type="class"))
+rownames(conf.matrix) <- paste("Actual", rownames(conf.matrix), sep = ":")
+colnames(conf.matrix) <- paste("Pred", colnames(conf.matrix), sep = ":")
+print(conf.matrix)
+
+plot(rparTree.pruned)
+text(rparTree.pruned, cex = 0.8, use.n = TRUE, xpd = TRUE)
+
+prp(rparTree.pruned, faclen = 0, cex = 0.8, extra = 1)
+
 ```
 
 ##Let's make a prediction (accuracy of testing dataset)
 
-#a) Linear Discriminant Analysis and Confusion Matrix
+#a) Classification Tree / Recursive Partitioning and Confusion Matrix
 ```{r}
-predictions <- predict(fit.lda, testDF)
+predictions <- predict(rparTree, testDF)
 head(predictions)
-confusionMatrix(predictions,testDF$state)
-```
-#b) Classification Tree / Recursive Partitioning and Confusion Matrix
-```{r}
-predictions <- predict(fit.cart, testDF)
-head(predictions)
-confusionMatrix(predictions,testDF$state)
-```
-#c) Final algorithm Random Forest and confusion matrix
-```{r}
-predictions <- predict(fit.rf, testDF)
-head(predictions)
-confusionMatrix(predictions,testDF$state)
-
+confusionMatrix(predictions,testDF$SLA)
 ```
 
+## Deployment
+Predicting outcome of an unseen data point
+```{r}
+xnew = data[21170,c('priority','app_category','res_category','grp_level','region','prod_line')]
+predict(fit.rf,xnew)
+
+
+```
