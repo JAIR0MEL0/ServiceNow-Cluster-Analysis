@@ -73,6 +73,7 @@ sum(!complete.cases(sdata))
 * application: Number of the application of the reported issue.  This is a relevant variable which a certantly number of tickets are assigned to one application.
 * region: Region where the Application is supported.  Significant as a region is associated to a particular population of users reporting issues of an application.
 * prod_line: Category of the Application: These are two major Production Line which the applications belong to.
+#VK :  Can you please explain this better ? There are other ways a ticket is categorised. Is this a subset ?
 * opened: Date when the issues was opened.  The ticket has 5 stages:  Not Assigned, In Progress, Customer Action, Pending, Resolved, Closed.
 
 Not Assigned: The ticket was created/open, but still not been worked by the support team.
@@ -81,6 +82,7 @@ Customer Action: The ticket goes into a stand-by because additional information 
 Pending: The ticket goes into a stand-by because there is an activity to be performed by a third party group before the current support group can continue working.
 Resolved: Once the issue is fixed, the user is notified by the Support team.
 Closed: Each resolved ticket moves into Closed after the user confirms, or automatically, the ticket is closed after n number of days.
+#VK : This is nice. very clear. But we should make is clear that we work only with opened and resolved dates.
 
 * app_category: Category of the Application.  Relevant as this is the classification of the application.
 * priority: Priority of the Issue.  This is the result of Urgency and Impact.  
@@ -98,6 +100,8 @@ Level 2: This is the specialist team who has greater knowledge on how the applic
 Level 3: This is the Developers of the applications; has complete knowledge of the application and finally able to resolve the issues scalated by L2 team.
 
 The "Level" word can be removed from the field and use the numbers 1,2,3.  Level 1 is the less specialized, and 3 is the most specialized, usually a lot more expensive than 1.
+#VK : Make it explicit that cost for JJ increases going from L1 to L3. Do you know the factor of increase ? We are focussing
+on L2 and L3 in both supervised and unsupervised learning.
 
 * resolved: Date when the issue was resolved.  Refer to the Opened field for explanation of the stages of the tickets.
 * res_category: Category of the type of resolution support team completed.
