@@ -56,6 +56,16 @@ We will take care of duplicated, records with NA values, removing tickets that a
 ```{r cleaning, echo=FALSE}
 nrow(sdata)
 
+sdata <- select(sdata,-incident)
+sdata <- select(sdata,-cust_time)
+sdata <- select(sdata,-pend_time)
+sdata <- select(sdata,-call_log)
+sdata <- select(sdata,-chat_log)
+sdata <- select(sdata,-Closed)
+
+#Make sure there are no NA entries.
+sum(is.na(sdata))  #0
+
 sdata <- distinct(sdata)
 #Removing observations where tickets are not closed
 sdata <- sdata[which(sdata$resolved != "" ),]
@@ -66,7 +76,25 @@ sum(!complete.cases(sdata))
 
 #Removing any other groups that re not under ITSM Governance
 sdata <- subset(sdata, grp_level=='Level 1' | grp_level=='Level 2' | grp_level=='Level 3')
+sum(sdata$opened == "")
+sum(sdata$application == "")
+sum(sdata$region == "")
+sum(sdata$prod_line == "")
+sum(sdata$app_category == "")
+sum(sdata$priority == "")
+sum(sdata$sup_grp == "")
 
+sum(sdata$grp_level == "")  #1
+#Remove rows with blanks
+sdata <- sdata[which(sdata$grp_level != "" ),]
+
+sum(sdata$res_category == "") #1
+#Remove rows with blanks
+sdata <- sdata[which(sdata$res_category != "" ),]
+
+sum(sdata$opened == "")
+sum(sdata$urgency == "")
+sum(sdata$impact == "")
 nrow(sdata)
 ```
 
@@ -211,22 +239,6 @@ call_log: This feature is not used mainly; while Support team uses Skype IM
 chat_log: Less than 1% of the tickets are manages through chat from ServiceNow; support team usually use Skype IM, which is not recorded in the dataset.
 Closed:  We will focus our analysis on Resolved tickets, close is an automatic process happening 12 days after the ticket was resolved.
 
-Here is the dataset:
-```{r removefield, echo=FALSE}
-
-#Remove irrelevant features
-sdata <- select(sdata,-incident)
-sdata <- select(sdata,-cust_time)
-sdata <- select(sdata,-pend_time)
-sdata <- select(sdata,-call_log)
-sdata <- select(sdata,-chat_log)
-sdata <- select(sdata,-Closed)
-#Ensuring all the observations are valid
-sdata <- na.omit(sdata)
-str(sdata)
-
-```
-
 ## New Numeric Variables
 We are now creating Numeric representation of 
 Impact -> impactN
@@ -357,7 +369,9 @@ sdata <- subset(sdata,!region %in% rare_levels)
 sdata$region <- factor(sdata$region)
 
 summary(sdata)
+#17410
 nrow(sdata)
+
 ```
 
 
