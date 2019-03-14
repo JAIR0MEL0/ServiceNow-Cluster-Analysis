@@ -1,6 +1,6 @@
 ---
 title: "ML1000CourseProjectRtlGrp"
-author: "Jairo Melo"
+author: "Ignacio Palma, Jairo Melo and Vikram Khade"
 date: '2019-03-13'
 output:
   word_document: default
