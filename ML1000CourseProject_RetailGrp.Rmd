@@ -1,8 +1,10 @@
 ---
-title: "Course Project ML1000 - Retail Group"
-author: "Retail Group: Ignacio Palma, Jairo Melo, Mahboob Jamil, Vikram Khade"
-output: github_document
-Objective: Service Desk Tickets Analysis to resolved business questions about improving reliability while reducing cost
+title: "ML1000CourseProjectRtlGrp"
+author: "Jairo Melo"
+date: '2019-03-13'
+output:
+  word_document: default
+  html_document: default
 ---
 
 ```{r libraries, include=FALSE}
@@ -27,6 +29,7 @@ library(RColorBrewer)
 library(scales)
 library(rpart)
 library(rpart.plot)
+library(corrplot)
 
 ```
 
@@ -49,21 +52,22 @@ sdata=read.csv("~/desktop/ML/YORK/CourseProject/Support Tickets Dataset- ML.csv"
 ```
 
 ## Cleaning the data
-Remove any duplicated or missing observations if there is any.
-```{r pressure, echo=FALSE}
+We will take care of duplicated, records with NA values, removing tickets that are not Resolved, as well as undertermine records, for example: Tickets with Support Level outside of the standards.
+```{r cleaning, echo=FALSE}
 nrow(sdata)
-sdata <- distinct(sdata)
 
+sdata <- distinct(sdata)
 #Removing observations where tickets are not closed
-#TSdata <- TSdata[TSdata$resolved != '',]
 sdata <- sdata[which(sdata$resolved != "" ),]
 sdata <- sdata[which(sdata$res_category != "" ),]
-nrow(sdata)
 
 #Though sdata is complete, We check if some rows containing NULL or weid entries are caught by this command.
 sum(!complete.cases(sdata))
 
+#Removing any other groups that re not under ITSM Governance
+sdata <- subset(sdata, grp_level=='Level 1' | grp_level=='Level 2' | grp_level=='Level 3')
 
+nrow(sdata)
 ```
 
 
@@ -71,19 +75,15 @@ sum(!complete.cases(sdata))
 
 * incident: Number of the ticket incident.  Not a significant variable as is sequencial counter.
 * application: Number of the application of the reported issue.  This is a relevant variable which a certantly number of tickets are assigned to one application.
-* region: Region where the Application is supported.  Significant as a region is associated to a particular population of users reporting issues of an application.
-* prod_line: Category of the Application: These are two major Production Line which the applications belong to.
-#VK :  Can you please explain this better ? There are other ways a ticket is categorised. Is this a subset ?
+* region: Region where the user is located.  Significant as a region is associated to a particular population of users reporting issues of an application.
+* prod_line: Product Line is a group of related products under the same brand. For example, Web and Ecommerce, and also Internal Business process applications.
 * opened: Date when the issues was opened.  The ticket has 5 stages:  Not Assigned, In Progress, Customer Action, Pending, Resolved, Closed.
-
 Not Assigned: The ticket was created/open, but still not been worked by the support team.
 In Progress: The ticket is assigned to a support group who is actively working on it.
 Customer Action: The ticket goes into a stand-by because additional information is requested from the user before the current support group can continue working.
 Pending: The ticket goes into a stand-by because there is an activity to be performed by a third party group before the current support group can continue working.
 Resolved: Once the issue is fixed, the user is notified by the Support team.
-Closed: Each resolved ticket moves into Closed after the user confirms, or automatically, the ticket is closed after n number of days.
-#VK : This is nice. very clear. But we should make is clear that we work only with opened and resolved dates.
-
+Closed: Each resolved ticket moves into Closed after the user confirms, or automatically, the ticket is closed after n number of days.  For our analysis, we will using only tickets that are Resolved.  Closed might not be relevant as there is a strong correlation between Closed and Resolved.
 * app_category: Category of the Application.  Relevant as this is the classification of the application.
 * priority: Priority of the Issue.  This is the result of Urgency and Impact.  
 Low Urgency - Limited Impact = Lower Priority. -> 4
@@ -93,15 +93,15 @@ The "Priority" word can be removed from the field and use the numbers 1,2,3,4.  
 * impact: What's the extension of the issue in terms of number of users.  eg: Limited means small group usually 1 or 2 users, Spread-out means usually an area, department or even all organization.  There is a strong correlation between Urgency and Priority; which might cause to ommit the field when using Priority.
 * Closed: Date when the ticket was finally closed.  Refer to the Opened field for explanation of the stages of the tickets.
 * sup_grp: Support Group providing resolution to the issue.  This is relevant as the support group is responsible to effectively close a ticket as soon as it's assigned.
-* grp_level: Support Group Level.  There are 3 different support levels.  
+* grp_level: Support Group Level.  There are 3 different groups of support level.
 
 Level 1: Service Desk, primary group who handles all tickets and try to troubleshot the issue.  Most of the tickets should be filtered by this team.  This is less specialized team, and help to keep Level 2 and 3 focus on major activities.
 Level 2: This is the specialist team who has greater knowledge on how the application operates.  This team takes care of tickets Level 1 is not able to resolved.
 Level 3: This is the Developers of the applications; has complete knowledge of the application and finally able to resolve the issues scalated by L2 team.
 
+For JnJ, the L2 and L3 are more expensive, and the interest of the company is to identify ways to reduce cost translating activities from L3 to L2 and from L2 to L1.
+
 The "Level" word can be removed from the field and use the numbers 1,2,3.  Level 1 is the less specialized, and 3 is the most specialized, usually a lot more expensive than 1.
-#VK : Make it explicit that cost for JJ increases going from L1 to L3. Do you know the factor of increase ? We are focussing
-on L2 and L3 in both supervised and unsupervised learning.
 
 * resolved: Date when the issue was resolved.  Refer to the Opened field for explanation of the stages of the tickets.
 * res_category: Category of the type of resolution support team completed.
@@ -113,52 +113,106 @@ on L2 and L3 in both supervised and unsupervised learning.
 Let's chart the data to understand more about the variables associated to the support activities
 
 ## Data Visualization
-Let's review what the data can tell us about supporting applications for JTS:
+Let's review what the data can tell us about supporting applications for JJTS:
 
-
-```{r sup_level, echo=FALSE}
-
-barplot(table(sdata$app_category))
-
-
+### Plot by Application Category
+This feature contains great information on how a particular ticket was resolved.
+```{r app_category, echo=FALSE}
+pp <- ggplot(sdata, aes(x=res_category)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='deeppink') + 
+  coord_flip()
+print(pp)
 ```
-```{r sup_level, echo=FALSE}
 
-pieGRP <- table(sdata$grp_level)
-pct <- round(pieGRP/sum(pieGRP)*100)
-lbls <- paste(names(pieGRP), "\n", pieState, sep="")
-lbls <- paste(lbls, pct) # add percents to labels 
-lbls <- paste(lbls,"%",sep="") # ad % to labels 
-pie(pieGRP,labels = lbls, col=rainbow(length(lbls)),main="Pie by Group Level")
-pieGRP
-
+##Exploring Applications
+There is more than 500 applications.  This feature might not be the best for Supervised Algorithms.
+```{r applications, echo=FALSE}
+pp <- ggplot(sdata, aes(x=application)) + geom_bar(aes(y=..count../sum(..count..)),col='violet',fill='violet') + 
+  coord_flip()
+print(pp)
 ```
 
 
-```{r support group, echo=FALSE}
-plot(table(sdata$priority))
-```
-```{r support group, echo=FALSE}
-plot(table(sdata$grp_level))
+## Exploring Support Group Level
+Support Group Level indicates the expertise of the support team.  At the same time, the cost of the time goes up while more expert.
+```{r grp_level, echo=FALSE}
+
+pp <- ggplot(sdata, aes(x=grp_level)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='deepskyblue') + 
+      coord_flip() 
+print(pp)
+
 ```
 
-Plot by Resolution Category
 
-```{r support group, echo=FALSE}
-plot(table(sdata$res_category))
+## Exploring Application Category
+```{r app_catefgory, echo=FALSE}
+
+pp <- ggplot(sdata, aes(x=app_category)) + geom_bar(aes(y=..count../sum(..count..)),col='coral4',fill='coral4') + 
+     coord_flip() 
+print(pp)
 ```
+
+##Exploring Support Group
+```{r sup_grp, echo=FALSE}
+pp <- ggplot(sdata, aes(x=sup_grp)) + geom_bar(aes(y=..count../sum(..count..)),col='coral4',fill='coral4') + 
+  coord_flip()
+print(pp)
+```
+
+##Exploring Priority
+Priority is one of the most important features, and it comes from the combination or Urgency and Impact.
+```{r priority, echo=FALSE}
+pp <- ggplot(sdata, aes(x=priority)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='chocolate') + 
+   coord_flip()
+print(pp)
+
+```
+
+##Exploring Urgency
+How soon the issue needs to be resolved.  There is a strong correlation with Priority.
+```{r urgency, echo=FALSE}
+pp <- ggplot(sdata, aes(x=urgency)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='deeppink') + 
+  coord_flip()
+print(pp)
+```
+
+## Exploring Product Line
+There are only two product lines in this data set.  Its relevance might not be the highest but we'll keep it while our analysis.
+```{r prod_line, echo=FALSE}
+pp <- ggplot(sdata, aes(x=prod_line)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='firebrick1') + 
+  coord_flip()
+print(pp)
+```
+
+#Exploring the Impact
+This is associated to the number of users affected by the issue.
+```{r impact, echo=FALSE}
+pp <- ggplot(sdata, aes(x=impact)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='goldenrod') + 
+  coord_flip()
+print(pp)
+```
+
+#Exploring Region of where the Users are located
+When a ticket is created, the location of the user is recorded as well.
+```{r region, echo=FALSE}
+pp <- ggplot(sdata, aes(x=region)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='darkorange') + 
+  coord_flip() 
+print(pp)
+```
+
 
 
 
 ## Data Preparation
-
 Below attributes will be removed from the Dataset due to the low analytical value:
-Incident
-call_log
-chat_log
+Incident: This is the ID of the ticket.  We only use it to ensure there are not duplicates.
+cust_time: We will focus on the time that the ticket is resolved, customer time with other teams is not relevant for our analysis
+Pend_time: We will focus on the time that the ticket is resolved, pending time with other teams is not relevant for our analysis
+call_log: This feature is not used mainly; while Support team uses Skype IM
+chat_log: Less than 1% of the tickets are manages through chat from ServiceNow; support team usually use Skype IM, which is not recorded in the dataset.
+Closed:  We will focus our analysis on Resolved tickets, close is an automatic process happening 12 days after the ticket was resolved.
 
+Here is the dataset:
 ```{r removefield, echo=FALSE}
-
 
 #Remove irrelevant features
 sdata <- select(sdata,-incident)
@@ -167,90 +221,124 @@ sdata <- select(sdata,-pend_time)
 sdata <- select(sdata,-call_log)
 sdata <- select(sdata,-chat_log)
 sdata <- select(sdata,-Closed)
+#Ensuring all the observations are valid
+sdata <- na.omit(sdata)
+str(sdata)
+
 ```
 
-We will remove the words "Priority"" and "Level"" to allow the numberic be part of the analysis:
-```{r removing, echo=FALSE}
-#Removing any other groups that re not under ITSM Governance
-sdata <- subset(sdata, grp_level=='Level 1' | grp_level=='Level 2' | grp_level=='Level 3')
+## New Numeric Variables
+We are now creating Numeric representation of 
+Impact -> impactN
+Urgency -> urgencyN
+Priority -> priorityN
+Group Level -> LevelN
 
+```{r numeric, echo=FALSE}
 
 sdata["impactN"] <- "NA"
 sdata[sdata$impact=="Limited","impactN"] <- as.numeric(1) 
 sdata[sdata$impact=="Large","impactN"] <- as.numeric(2)
 sdata[sdata$impact=="Widespread","impactN"] <- as.numeric(3)
+sdata <- select(sdata,-impact)
 
 sdata["urgencyN"] <- "NA"
 sdata[sdata$urgency=="Low","urgencyN"] <- as.numeric(1) 
 sdata[sdata$urgency=="Medium","urgencyN"] <- as.numeric(2)
 sdata[sdata$urgency=="High","urgencyN"] <- as.numeric(3)
+sdata <- select(sdata,-urgency)
 
 sdata["priorityN"] <- "NA"
 sdata[sdata$priority=="Priority 4","priorityN"] <- as.numeric(1) 
 sdata[sdata$priority=="Priority 3","priorityN"] <- as.numeric(2)
 sdata[sdata$priority=="Priority 2","priorityN"] <- as.numeric(3)
-
-sdata$impactN <- as.numeric(sdata$impactN)
-sdata$urgencyN <- as.numeric(sdata$urgencyN)
-sdata$priorityN <- as.numeric(sdata$priorityN)
-
-
-nrow(sdata)
-
-```
-
-Now we will create the numeric representation of the Date variables:
-
-```{r dat_num, echo=FALSE}
-
-#Creation of a new variable called MTTR (Mean Time To Resolution)= Resolved time - Open Time
-
-sdata$MTTR <- difftime(sdata$resolved,sdata$opened,tz="GMT",units="secs")
-
-#Priority 1 is the lowest and Priority 3 is the highest
-
-sdata$SLA <- ifelse(sdata$priorityN == 3 & sdata$MTTR < 28801, "Gold", ifelse(sdata$priorityN == 2 & sdata$MTTR < 144001, "Silver", ifelse(sdata$priorityN == 1 & sdata$MTTR < 288001, "Bronze",ifelse(sdata$priorityN == 1 & sdata$MTTR < 432001, "Iron", "FAILED"))))
-
-sdata$SLA <- factor(sdata$SLA)
-
-summary(sdata$SLA)
-
-pieGRP <- table(sdata$SLA)
-pct <- round(pieGRP/sum(pieGRP)*100)
-lbls <- paste(names(pieGRP), "\n", pieState, sep="")
-lbls <- paste(lbls, pct) # add percents to labels 
-lbls <- paste(lbls,"%",sep="") # ad % to labels 
-pie(pieGRP,labels = lbls, col=rainbow(length(lbls)),main="Pie by SLA")
-pieGRP
-
-```
-{
-```{r}
-
-#convert dates to date objects
-sdata["open_date"] <- "NA"
-sdata["open_date"] <- as.Date(as.character(sdata[,"opened"]),"%Y-%m-%d")
-sdata["resolve_date"] <- "NA"
-sdata["resolve_date"] <- as.Date(as.character(sdata[,"resolved"]),"%Y-%m-%d")
-
-#Calculate days required to close a ticket
-sdata["ndays"] <- "NA"
-sdata["ndays"] <- as.numeric(sdata[,"resolve_date"] - sdata[,"open_date"])
-
-
-
-```
-
-
-```{r}
+sdata <- select(sdata,-priority)
 
 #Convert ordinal level to numeric and save in new feature
 sdata["levelN"] <- as.numeric(0)
 sdata[sdata$grp_level=="Level 1","levelN"] <- as.numeric(1) 
 sdata[sdata$grp_level=="Level 2","levelN"] <- as.numeric(2)
 sdata[sdata$grp_level=="Level 3","levelN"] <- as.numeric(3)
+sdata <- select(sdata,-grp_level)
 
-#drop low frequency level for certain features. Threshold = 2.5%
+str(sdata)
+```
+
+
+Let's see visually the new Numeric Features
+```{r newNumeric, echo=FALSE}
+
+sdata$impactN <- as.numeric(sdata$impactN)
+pp <- ggplot(sdata, aes(x=impactN)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='goldenrod') + 
+  coord_flip()
+print(pp)
+
+sdata$priorityN <- as.numeric(sdata$priorityN)
+pp <- ggplot(sdata, aes(x=priorityN)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='chocolate') + 
+  coord_flip()
+print(pp)
+
+pp <- ggplot(sdata, aes(x=levelN)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='chocolate') + 
+  coord_flip()
+print(pp)
+
+sdata$urgencyN <- as.numeric(sdata$urgencyN)
+pp <- ggplot(sdata, aes(x=urgencyN)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='deeppink') + 
+  coord_flip()
+print(pp)
+
+```
+
+##Dates to chart and Duration of a Ticket
+
+Now we will create the numeric representation of the Date variables and calculate the number of days that support team took to resolve an issue.
+
+ndays is the time support team took to resolved the issue, in this case is calculated as Resolved - Opened
+```{r datesChar, echo=FALSE}
+
+#convert dates to date objects
+sdata["open_date"] <- "NA"
+sdata["open_date"] <- as.Date(as.character(sdata[,"opened"]),"%Y-%m-%d")
+sdata <- select(sdata,-opened)
+sdata["resolve_date"] <- "NA"
+sdata["resolve_date"] <- as.Date(as.character(sdata[,"resolved"]),"%Y-%m-%d")
+sdata <- select(sdata,-resolved)
+#Calculate days required to resolve a ticket
+sdata["ndays"] <- "NA"
+sdata["ndays"] <- as.numeric(sdata[,"resolve_date"] - sdata[,"open_date"])
+
+str(sdata)
+
+```
+
+## Correlation Matrix
+Based on our previous charts, we are now curious to see if there is any feature which its correlation might cause to have it dropped.
+
+```{r plotting, echo=FALSE}
+JJdata.cor = cor(sdata[,c("impactN","urgencyN","priorityN","levelN","ndays")])
+JJdata.cor
+corrplot(JJdata.cor)
+```
+
+From the figure we identify that urgency and priority are strongly correlated
+Priority and impact are weakly correlated (0.27) this could be because it is defined by the user during the ticket triaging.
+Similarly priority and level are weakly correlated.
+ndays has a very low correlation.
+
+Since priority and urgency are highly correlated (0.89) urgency is dropped from further analysis.
+```{r dropurgency, echo=FALSE}
+sdata <- select(sdata,-urgencyN)
+
+str(sdata)
+
+```
+
+
+
+## Low Frequency Cleaning
+
+In particular, App Category, Resolution category and Region contains very low frequency levels which could reduce accuracy for our predictions or computing time during our cluster analys.  We choose the Threshold = 2.5% to remove observations.
+```{r lowFrequency, echo=FALSE}
 perc <- round(nrow(sdata)*2.5/100)
 
 tt <- table(sdata$app_category)
@@ -268,180 +356,175 @@ rare_levels <- names(tt)[tt<perc]
 sdata <- subset(sdata,!region %in% rare_levels)
 sdata$region <- factor(sdata$region)
 
-
-```
-
-```{r sup_level, echo=FALSE}
-
-
-
+summary(sdata)
+nrow(sdata)
 ```
 
 
+## Calculating Performance
+We are rating the servcies provided by the vendor the following way:
+Excellent:  All P1, P2 or P3 tickets resolved within 1 day
+Good:       For P2 tickets resolved within 5 Days
+Average:    For P2 or P1 Tickets resolved within 10 days
+Failed:     For any other ticket is considered Bad performance is rated as failed service.
+- P3 resolved in more than 1 day
+- P2 resolved in more than 5 days
+- P1 resolved in more than 10 days
 
+```{r performance, echo=FALSE}
 
-```{r}
-savedir <- ""
+sdata$performance <- ifelse(sdata$ndays < 1, "Excellent", ifelse(sdata$priorityN == 2 & sdata$ndays <= 5, "Good", ifelse(sdata$priorityN <= 2 & sdata$ndays <= 10, "Average", "Failed")))
 
-pp <- ggplot(sdata, aes(x=application)) + geom_bar(aes(y=..count../sum(..count..)),col='violet',fill='violet') + 
-  coord_flip()
+sdata$performance <- factor(sdata$performance)
 
-pp <- ggplot(sdata, aes(x=sup_grp)) + geom_bar(aes(y=..count../sum(..count..)),col='coral4',fill='coral4') + 
-  coord_flip()
-
-fnm <- paste(c(savedir,'app_category_hori.pdf'),collapse='')
-
-pdf(fnm)
-pp <- ggplot(sdata, aes(x=app_category)) + geom_bar(aes(y=..count../sum(..count..)),col='coral4',fill='coral4') + 
-     coord_flip() 
-print(pp)
-dev.off()
-
-fnm <- paste(c(savedir,'priority_hori.pdf'),collapse='')
-pdf(fnm)
-pp <- ggplot(sdata, aes(x=priority)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='chocolate') + 
-   coord_flip()
-print(pp)
-dev.off()
-
-fnm <- paste(c(savedir,'priorityN_hori.pdf'),collapse='')
-pdf(fnm)
-pp <- ggplot(sdata, aes(x=priorityN)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='chocolate') + 
-  coord_flip()
-print(pp)
-dev.off()
-
-fnm <- paste(c(savedir,'res_category_hori.pdf'),collapse='')
-pdf(fnm)
-pp <- ggplot(sdata, aes(x=res_category)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='deeppink') + 
-  coord_flip()
-print(pp)
-dev.off()
-
-fnm <- paste(c(savedir,'urgency_hori.pdf'),collapse='')
-pdf(fnm)
-pp <- ggplot(sdata, aes(x=urgency)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='deeppink') + 
-  coord_flip()
-print(pp)
-dev.off()
-
-fnm <- paste(c(savedir,'urgencyN_hori.pdf'),collapse='')
-pdf(fnm)
-pp <- ggplot(sdata, aes(x=urgencyN)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='deeppink') + 
-  coord_flip()
-print(pp)
-dev.off()
-
-
-
-fnm <- paste(c(savedir,'prod_line_hori.pdf'),collapse='')
-pdf(fnm)
-pp <- ggplot(sdata, aes(x=prod_line)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='firebrick1') + 
-  coord_flip()
-print(pp)
-dev.off()
-
-fnm <- paste(c(savedir,'impact_hori.pdf'),collapse='')
-pdf(fnm)
-pp <- ggplot(sdata, aes(x=impact)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='goldenrod') + 
-  coord_flip()
-print(pp)
-dev.off()
-
-fnm <- paste(c(savedir,'impactN_hori.pdf'),collapse='')
-pdf(fnm)
-pp <- ggplot(sdata, aes(x=impactN)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='goldenrod') + 
-  coord_flip()
-print(pp)
-dev.off()
-
-fnm <- paste(c(savedir,'grp_level_hori.pdf'),collapse='')
-pdf(fnm)
-pp <- ggplot(sdata, aes(x=grp_level)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='deepskyblue') + 
-      coord_flip() 
-print(pp)
-dev.off()
-
-fnm <- paste(c(savedir,'region_hori.pdf'),collapse='')
-pdf(fnm)
-pp <- ggplot(sdata, aes(x=region)) + geom_bar(aes(y=..count../sum(..count..)),col='black',fill='darkorange') + 
-  coord_flip() 
-print(pp)
-dev.off()
-
-
-
-
-#Since priority and urgency are highly correlated (0.89) urgency is dropped from further analysis.
-sdata <- select(sdata,-urgencyN)
-sdata <- select(sdata,-urgency)
-
+summary(sdata$performance)
+#need to figure out why the numbers are not matching to the %
+pieGRP <- table(sdata$performance)
+pct <- round(pieGRP/sum(pieGRP)*100)
+lbls <- paste(names(pieGRP), "\n", sep="")
+lbls <- paste(lbls,pct) # add percents to labels 
+lbls <- paste(lbls,"%",sep="") # ad % to labels 
+pie(pieGRP,labels = lbls, col=rainbow(length(lbls)),main="Performance")
+#pieGRP
 
 ```
+
+
+
 
 # Supervised Learning
 
+Adding the reason of using the below predictors
+priority + grp_level + app_category + res_category + region + prod_line
 
 ##Feature selection
-Let's run a random forest to quantify the relative importance of these features
-```{r}
-set.seed(719)
-rfImp <- randomForest(SLA ~ priority + app_category + res_category + grp_level + region + prod_line, data = sdata, ntree = 100, importance = TRUE)
-importance(rfImp,type=2)
+Let's run a random forest to quantify the relative importance of these features.  We will use features with less than 50 Levels, so Application and Support Group will go away.  Also Dates should not be considered.  Ndays is not a predictable variable because we can't actually trying to Predict the Performance of resolving a ticket when Duration is provided since we won't know how long the ticket will last unresolved, but we will know what Priority the ticket is raised.
 
+Finally, Resolution category is unknown as we don't know what the issue is.  We can predict based on the resolution.
+
+```{r checkingPredictors, echo=FALSE}
+set.seed(719)
+
+rfImp <- randomForest(performance ~ priorityN + levelN + app_category + region + impactN + prod_line + impactN , data = sdata, ntree = 100, importance = TRUE)
+importance(rfImp,type=2)
 ```
 
-We will use supervised algorithms to model the 
 
-#This is to use the same data set for Training and Test
 
-```{r supervised, echo=FALSE}
-splitIndex <- createDataPartition(sdata[,'SLA'], p = .75, list = FALSE, times = 1)
-trainDF <- sdata[ splitIndex,]
-testDF  <- sdata[-splitIndex,]
+
+
+As shown in the table, Product Line has the lowest predictable power.  Understandable because there is only two Product Lines; and the decision is either one of the other.  Very limited predictibility power.
+
+# Suppervised Modeling
+
+## Classification and Regression Trees
+
+For our Analysis, we will select 5 of the most predictable features:
+
+Priority, Support Level, App Category, Resolution Category, Region
+
+```{r regTree, echo=FALSE}
+
+TSdata <- sdata[,c("priorityN", "levelN" , "app_category" , "region", "impactN", "performance")]
+
+#write.csv(TSdata,'TSdata.csv')
+
+splitIndex <- createDataPartition(TSdata[,'performance'], p = .75, list = FALSE, times = 1)
+trainDF <- TSdata[ splitIndex,]
+testDF  <- TSdata[-splitIndex,]
 
 set.seed(152)
 
-rparTree <- rpart(SLA ~ priority + app_category + res_category + grp_level + region, data=trainDF, control = rpart.control(cp = 0.0001))
+rparTree <- rpart(performance ~ ., data=trainDF, control = rpart.control(cp = 0.0001))
 
-```
-## Visualize model
-#################################################
-```{r}
 printcp(rparTree)
 
+```
+
+
+The tree has a misclassification rate of 0.66669 * 0.52531 * 100% = 35% in cross-validation (65% of prediction accuracy). 
+
+## Pruning and ploting model
+
+We now pick the tree size that minimizes prediction error which is a misclassification rate
+Prediction error rate in training data = Root node error * rel error * 100%
+Prediction error rate in cross-validation = Root node error * xerror * 100%
+We want the cp value that minimizes the xerror
+```{r treePruned, echo=FALSE}
 bestcp <- rparTree$cptable[which.min(rparTree$cptable[,"xerror"]),"CP"]
-
-# Step3: Prune the tree using the best cp.
+#Prune the tree using the best cp.
 rparTree.pruned <- prune(rparTree, cp = bestcp)
-
-# confusion matrix (training data)
-conf.matrix <- table(sdata$SLA, predict(rparTree.pruned,type="class"))
-rownames(conf.matrix) <- paste("Actual", rownames(conf.matrix), sep = ":")
-colnames(conf.matrix) <- paste("Pred", colnames(conf.matrix), sep = ":")
-print(conf.matrix)
-
 plot(rparTree.pruned)
 text(rparTree.pruned, cex = 0.8, use.n = TRUE, xpd = TRUE)
 
+```
+## Confusion Matrix for Training data
+
+```{r confusionTable, echo=FALSE}
+
+#show the confusion matrix we had 
+
+conf.matrix <- table(trainDF$performance, predict(rparTree.pruned,type="class"))
+rownames(conf.matrix) <- paste("Actual", rownames(conf.matrix), sep = ":")
+colnames(conf.matrix) <- paste("Pred", colnames(conf.matrix), sep = ":")
+print(conf.matrix)
+```
+
+## Ploting the Tree Pruned
+
+```{r modeDetail, echo=FALSE}
 prp(rparTree.pruned, faclen = 0, cex = 0.8, extra = 1)
+```
+
+##Let's test the model (accuracy of testing dataset)
+
+#a) Classification Tree / Recursive Partitioning and Confusion Matrix
+
+```{r prediction, echo=FALSE}
+summary(testDF$performance)
+predictions <- predict(rparTree, testDF)
+
+summary(predictions)
+head(predictions)
+#confusionMatrix(predictions, testDF$performance)
 
 ```
 
-##Let's make a prediction (accuracy of testing dataset)
+Ploting the Tree in black in White in case of not having a Color printer
+```{r plotTree, echo=FALSE}
 
-#a) Classification Tree / Recursive Partitioning and Confusion Matrix
-```{r}
-predictions <- predict(rparTree, testDF)
-head(predictions)
-confusionMatrix(predictions,testDF$SLA)
+tot_count <- function(x, labs, digits, varlen)
+{
+  paste(labs, "\n\nn =", x$frame$n)
+}
+
+prp(rparTree.pruned, faclen = 0, cex = 0.8, node.fun=tot_count)
+
+```
+
+Adding color to the Tree for each Performance
+
+```{r plotColors, echo=FALSE}
+
+only_count <- function(x, labs, digits, varlen)
+{
+  paste(x$frame$n)
+}
+
+boxcols <- c("palegreen3", "blue", "white","pink")[rparTree.pruned$frame$yval]
+
+par(xpd=TRUE)
+prp(rparTree.pruned, faclen = 0, cex = 0.8, node.fun=only_count, box.col = boxcols)
+legend("bottomleft", legend = c("Excellent","Good","Average","Failed"), fill = c("palegreen3", "blue", "white","pink"),
+       title = "Performance")
+
 ```
 
 ## Deployment
 Predicting outcome of an unseen data point
-```{r}
-xnew = data[21170,c('priority','app_category','res_category','grp_level','region','prod_line')]
-predict(fit.rf,xnew)
+```{r deployment, echo=FALSE}
+xnew = sdata[21170,c('priorityN','app_category','levelN','region','impactN')]
+predict(rparTree,xnew)
 
 
 ```
