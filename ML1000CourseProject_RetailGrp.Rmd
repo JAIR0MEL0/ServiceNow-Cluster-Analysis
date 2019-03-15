@@ -289,7 +289,7 @@ sdata["levelN"] <- as.numeric(0)
 sdata[sdata$grp_level=="Level 1","levelN"] <- as.numeric(1) 
 sdata[sdata$grp_level=="Level 2","levelN"] <- as.numeric(2)
 sdata[sdata$grp_level=="Level 3","levelN"] <- as.numeric(3)
-sdata <- select(sdata,-grp_level)
+#sdata <- select(sdata,-grp_level)
 
 str(sdata)
 ```
@@ -437,10 +437,9 @@ ggplot(data = sdata, mapping = aes(x = performance, y = res_category)) + geom_ji
 ```
 
 
-# Supervised Learning
+# Supervised Modeling
 
-```{r}
-```
+## Predicting Performance
 
 ## Objective
 For our analysis, we will predict what performance a ticket will have given an basic data related to the issue.
@@ -463,9 +462,7 @@ rfImp <- randomForest(performance ~ app_category + levelN + region + priorityN +
 importance(rfImp,type=2)
 ```
 
-As shown in the table, Product Line has the lowest predictable power.  Understandable because there is only two Product Lines; and the decision is either one of the other.  Very limited predictibility power.
-
-# Suppervised Modeling
+As shown in the table, Product Line has the lowest predictable power.  Understandable because there is only two Product Lines; and the decision is either one of the other.  Very limited predictability power.
 
 ## Classification and Regression Trees
 
@@ -535,7 +532,6 @@ The Balance accuracy is less than 70.5% for all performance and with the Balance
            Excellent   Class           Average       Failed
              0.50401    0.499341      0.5032167     0.5017638
 
-
 b) Classification Tree / Recursive Partitioning and Confusion Matrix
 ```{r}
 predictions <- predict(fit.cart, testDF)
@@ -547,7 +543,6 @@ The Balance accuracy is 71% for all performance
              0.51989   0.5026489       0.509343      0.533771
 is better than LDA; but not by far.
 
-
 ```{r}
 predictions <- predict(fit.rf, testDF)
 head(predictions)
@@ -557,6 +552,160 @@ confusionMatrix(factor(predictions, levels = c("Excellent","Good","Average","Fai
 The Balance accuracy is better with Random forest with 71.1% or accuray
            Excellent   Class           Average       Failed
 Balanced Accuracy             0.52578    0.502751       0.511204      0.541517
+Random forest is giving us the best accuracy of all three, altough, they are pretty close.
+
+## Plotting Classification and Regression Trees (CART)
+All three methods are giving us a close prediction accuracy of 71%.  To better understand the process, we will inspect Classification Trees deeper.
+```{r plottingcartLeve, echo=FALSE}
+
+plot(fit.cart, scales = list(x = list(rot = 90)))
+
+```
+
+Accuracy decreases after CP = 0.00035.  Complexity Parameter is the minimum improvement in the model needed at each node. The cp value is a stopping parameter. It helps speed up the search for splits because it can identify splits that don’t meet this criteria and prune them before going too far.
+
+
+Let's look at the Tree how the decision is being calculated:
+```{r}
+
+prp(fit.cart$finalModel, box.palette = "Reds", tweak = 1.2)
+
+```
+
+## Deployment of Performance Predictor
+We will run a prediction using the Classification Tree Model, then we will generate the model to be used by our Shiny App.
+```{r deployment, echo=FALSE}
+xnew = sdata[5000,c("priorityN","app_category","levelN","region","impactN","prod_line")]
+predictions <- predict(fit.rf,xnew)
+xnew$priorityN
+head(predictions)
+saveRDS(fit.cart,'jjts_cart_model')
+
+```
+
+
+##Conclusion
+
+
+```{r}
+```
+
+# Supervised Learning - Predicting Group Level
+
+```{r}
+```
+
+## Objective
+For our analysis, we will predict which group a ticket will assigned based on the basic information data related to the issue.
+
+## What's the Problem
+Every year, negotiations with vendors focus on the number of members required to provide support activities.  One major indicator is the number of tickets for each Level.  That will give us not only a range of negotiation but also might uncover opportunities to move activities from L3 to L2 and from L2 to L1.
+
+##Feature selection
+Let's run a random forest to quantify the relative importance of these features.  We will use features with less than 50 Levels, so Application and Support Group will go away.  Also Dates should not be considered.  Ndays is not a predictable variable because we can't actually trying to Predict the Performance of resolving a ticket when Duration is provided since we won't know how long the ticket will last unresolved, but we will know what Priority the ticket is raised.
+
+Note:
+Resolution Category can only be known when the ticket is resolved; so it won't work as predictor.
+
+Summary:
+app_category + prod_line + priorityN + region + performance  + impactN
+
+```{r checkingPredictorsLevel, echo=FALSE}
+set.seed(719)
+sdata$grp_level <- factor(sdata$grp_level)
+
+rfImp <- randomForest(grp_level ~ app_category + prod_line + priorityN + region + performance  + impactN, data = sdata, ntree = 100, importance = TRUE)
+importance(rfImp,type=2)
+```
+
+As shown in the table, Product Line has the lowest predictable power.  Understandable because there is only two Product Lines; and the decision is either one of the other.  Very limited predictability power.
+
+## Classification and Regression Trees
+
+For our Analysis, we will select 5 of the most predictable features:
+
+Priority, Support Level, App Category, Resolution Category, Region
+
+```{r regTreeLevel, echo=FALSE}
+
+TSdata <- sdata[,c("grp_level" , "app_category" , "prod_line" , "priorityN", "region", "performance" , "impactN")]
+
+#write.csv(TSdata,'TSdata.csv')
+
+splitIndex <- createDataPartition(TSdata[,'grp_level'], p = .75, list = FALSE, times = 1)
+trainDF <- TSdata[ splitIndex,]
+testDF  <- TSdata[-splitIndex,]
+```
+Let's see the dimmensions for:
+```{r dimensionsLevel}
+#Training
+dim(trainDF); 
+
+#Test
+dim(testDF);
+
+```
+All Algorithms
+
+```{r NonlinearLevel, echo=FALSE}
+set.seed(152)
+trctl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE)
+metric <- "Accuracy"
+fit.lda <- train(grp_level ~ ., data=trainDF, method="lda", metric=metric, trControl=trctl)
+fit.rf <- train(grp_level ~ ., data=trainDF, method="rf", metric=metric, trControl=trctl)
+trctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 3, savePredictions = TRUE)
+fit.cart <- train(grp_level ~ ., data=trainDF, method="rpart",
+                  parms = list(split = "information"),
+                  metric=metric,
+                  trControl=trctl)
+
+```
+
+As per the table; the mean accuracy of random forest is the highest of all the three algorithms.
+
+```{r Level, echo=FALSE}
+results <- resamples(list(lda=fit.lda, cart=fit.cart, rf=fit.rf))
+summary(results)
+```
+## Visualize the accuracy of the models of the Training
+```{r}
+dotplot(results)
+```
+
+The most important metric is prediction on the Testing data
+
+##Let's make a prediction (accuracy of testing dataset)
+
+a) Linear Discriminant Analysis and Confusion Matrix
+```{r Levellda, echo=FALSE}
+predictions <- predict(fit.lda, testDF)
+head(predictions)
+confusionMatrix(factor(predictions, levels = c("Level 1","Level 2","Level 3")),factor(testDF$grp_level, levels = c("Level 1","Level 2","Level 3")))
+
+```
+The Balance accuracy is less than 82.9% for all performance and with the Balanced accuracy:
+           Level 1       Level 2        Level 3
+           0.7365         0.6948        0.50000
+
+b) Classification Tree / Recursive Partitioning and Confusion Matrix
+```{r levelcart, echo=FALSE}
+predictions <- predict(fit.cart, testDF)
+head(predictions)
+confusionMatrix(factor(predictions, levels = c("Level 1","Level 2","Level 3")),factor(testDF$grp_level, levels = c("Level 1","Level 2","Level 3")))
+```
+The Balance accuracy for Classification Tree is 84.1% for all performance
+           Level 1     Level 2    Level 3
+           0.7448      0.7032     0.50000
+
+```{r levelrf, echo=FALSE}
+predictions <- predict(fit.rf, testDF)
+head(predictions)
+confusionMatrix(factor(predictions, levels = c("Level 1","Level 2","Level 3")),factor(testDF$grp_level, levels = c("Level 1","Level 2","Level 3")))
+
+```
+The Balance accuracy for Random Forest is 85.9% or accuray
+           Level 1        Level 2      Level 3
+           0.8054         0.7576       0.529462
 Random forest is giving us the best accuracy of all three, altough, they are pretty close.
 
 
@@ -573,27 +722,25 @@ Accuracy decreases after CP = 0.00035.  Complexity Parameter is the minimum impr
 
 
 Let's look at the Tree how the decision is being calculated:
-```{r}
+```{r plotcartlevel, echo=FALSE}
 
 prp(fit.cart$finalModel, box.palette = "Reds", tweak = 1.2)
 
 ```
 
 ## Deployment
-Predicting outcome of an unseen data point
-```{r deployment, echo=FALSE}
-xnew = sdata[5000,c("priorityN","app_category","levelN","region","impactN","prod_line")]
+We will run a sample to predict the Group Level and generate the model to be used with our Shiny App 
+```{r deploymentlevel, echo=FALSE}
+xnew = sdata[5000,c("app_category" , "prod_line" , "priorityN", "region", "performance" , "impactN")]
 predictions <- predict(fit.rf,xnew)
-xnew$priorityN
+xnew$grp_level
 head(predictions)
-
+saveRDS(fit.cart,'jjts_level_model')
 ```
 
 
 ##Conclusion:
+Accuracy to determine the Level is higher than accuracy to determine the 
 
-Saving the model for the Shyniapp
-```{r}
-saveRDS(fit.cart,'jjts_cart_model')
-```
+
 
