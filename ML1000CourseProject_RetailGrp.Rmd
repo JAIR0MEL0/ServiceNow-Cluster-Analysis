@@ -51,7 +51,7 @@ sdata=read.csv("~/desktop/ML/YORK/CourseProject/Support Tickets Dataset- ML.csv"
 
 ```
 
-## Cleaning the data
+## Identify Anomalies/Cleaning the data
 We will take care of duplicated, records with NA values, removing tickets that are not Resolved, as well as undertermine records, for example: Tickets with Support Level outside of the standards.
 
 
@@ -363,8 +363,6 @@ str(sdata)
 
 ```
 
-
-
 ## Low Frequency Cleaning
 
 In particular, App Category, Resolution category and Region contains very low frequency levels which could reduce accuracy for our predictions or computing time during our cluster analys.  We choose the Threshold = 2.5% to remove observations.
@@ -403,7 +401,6 @@ Average   |15  |10  | 5
 Failed:     For any other ticket is considered Bad performance is rated as failed service.
 
 ```{r performance, echo=FALSE}
-
 sdata$performance <- ifelse(sdata$ndays < 1, "Excellent", ifelse(sdata$ndays < 3 & sdata$priorityN <= 2, "Excellent", ifelse(sdata$ndays < 5 & sdata$priorityN < 2, "Excellent",ifelse(sdata$ndays < 3, "Good", ifelse(sdata$ndays < 5 & sdata$priorityN <= 2, "Good", ifelse(sdata$ndays < 10 & sdata$priorityN < 2, "Good", ifelse(sdata$ndays < 5, "Average", ifelse(sdata$ndays < 10 & sdata$priorityN <= 2, "Average", ifelse(sdata$ndays < 15 & sdata$priorityN < 2, "Average","Failed")))))))))
 
 sdata$performance <- factor(sdata$performance)
@@ -419,21 +416,50 @@ pie(pieGRP,labels = lbls, col=rainbow(length(lbls)),main="Performance")
 
 ```
 
+##Performance by most significant features
+Since now we have performance, let's inspect how the current support teams performs.
+##Performance by Application Category
+Interesting is that across the applications support team is performing quite well.  Howeverm software shows the highest issues.
+```{r performanceapp}
+ggplot(data = sdata, mapping = aes(x = performance, y = app_category)) + geom_jitter(aes(colour = performance))
+```
+
+##Performance by Support Level
+This is the Level of the Support Group level, 1 Service Desk, 2 Specialist, 3 Developer/Architect.  From the below chat we can conclude that most of the tickets are resolved by Support Level 2.  It would be interesting to look for opportunities to move L2 to L1.  Perhaps our unsupervise analysis would provide us ideas.
+
+```{r performancesup}
+ggplot(data = sdata, mapping = aes(x = performance, y = levelN)) + geom_jitter(aes(colour = performance))
+```
+##Performance by Resolution Category
+Altough, resolution category can't be use as predictor, it's interesting to visualize Data Issue is the most common across all the performance.
+```{r performanceres}
+ggplot(data = sdata, mapping = aes(x = performance, y = res_category)) + geom_jitter(aes(colour = performance))
+```
+
 
 # Supervised Learning
 
-Adding the reason of using the below predictors
-priority + grp_level + app_category + res_category + region + prod_line
+```{r}
+```
+
+## Objective
+For our analysis, we will predict what performance a ticket will have given an basic data related to the issue.
+
+## What's the Problem
+Business users needs to know how long a ticket would take to be resolved so they can focus on additional activities, or look for workarounds that will reduce the impact of the issue.
 
 ##Feature selection
 Let's run a random forest to quantify the relative importance of these features.  We will use features with less than 50 Levels, so Application and Support Group will go away.  Also Dates should not be considered.  Ndays is not a predictable variable because we can't actually trying to Predict the Performance of resolving a ticket when Duration is provided since we won't know how long the ticket will last unresolved, but we will know what Priority the ticket is raised.
 
-Finally, Resolution category is unknown as we don't know what the issue is.  We can predict based on the resolution.
+Finally, Resolution category is unknown as we don't know what the issue is.  We cannot predict based on the resolution.
+
+Summary:
+priority + grp_level + app_category + region + prod_line + impactN
 
 ```{r checkingPredictors, echo=FALSE}
 set.seed(719)
 
-rfImp <- randomForest(performance ~ priorityN + levelN + app_category + region + impactN + prod_line, data = sdata, ntree = 100, importance = TRUE)
+rfImp <- randomForest(performance ~ app_category + levelN + region + priorityN + impactN + prod_line, data = sdata, ntree = 100, importance = TRUE)
 importance(rfImp,type=2)
 ```
 
@@ -456,17 +482,31 @@ TSdata <- sdata[,c("priorityN", "levelN" , "app_category" , "region", "impactN",
 splitIndex <- createDataPartition(TSdata[,'performance'], p = .75, list = FALSE, times = 1)
 trainDF <- TSdata[ splitIndex,]
 testDF  <- TSdata[-splitIndex,]
+```
+Let's see the dimmensions for:
+```{r dimensions}
+#Training
+dim(trainDF); 
+
+#Test
+dim(testDF);
 
 ```
 All Algorithms
 
 ```{r Nonlinear, echo=FALSE}
 set.seed(152)
-trctl <- trainControl(method = 'cv', number = 20, savePredictions = TRUE)
+trctl <- trainControl(method = 'cv', number = 10, savePredictions = TRUE)
 metric <- "Accuracy"
 fit.lda <- train(performance ~ ., data=trainDF, method="lda", metric=metric, trControl=trctl)
-fit.cart <- train(performance ~ ., data=trainDF, method="rpart", metric=metric, trControl=trctl)
 fit.rf <- train(performance ~ ., data=trainDF, method="rf", metric=metric, trControl=trctl)
+
+trctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 3, savePredictions = TRUE)
+fit.cart <- train(performance ~ ., data=trainDF, method="rpart",
+                  parms = list(split = "information"),
+                  metric=metric,
+                  trControl=trctl)
+
 ```
 
 As per the table; the mean accuracy of random forest is the highest of all the three algorithms.
@@ -491,11 +531,10 @@ head(predictions)
 confusionMatrix(factor(predictions, levels = c("Excellent","Good","Average","Failed")),factor(testDF$performance, levels = c("Excellent","Good","Average","Failed")))
 
 ```
-The Balance accuracy is less than 50% for all performance
+The Balance accuracy is less than 70.5% for all performance and with the Balanced accuracy:
            Excellent   Class           Average       Failed
-             0.48542   0.4981222       0.498517      0.498972
+             0.50401    0.499341      0.5032167     0.5017638
 
-is too low.
 
 b) Classification Tree / Recursive Partitioning and Confusion Matrix
 ```{r}
@@ -503,24 +542,42 @@ predictions <- predict(fit.cart, testDF)
 head(predictions)
 confusionMatrix(factor(predictions, levels = c("Excellent","Good","Average","Failed")),factor(testDF$performance, levels = c("Excellent","Good","Average","Failed")))
 ```
-The Balance accuracy is less than 50% for all performance
+The Balance accuracy is 71% for all performance
            Excellent   Class           Average       Failed
-             0.48542   0.4981222       0.498517      0.498972
-is the same as LDA.
+             0.51989   0.5026489       0.509343      0.533771
+is better than LDA; but not by far.
 
 
-c) Final algorithm Random Forest and confusion matrix
 ```{r}
 predictions <- predict(fit.rf, testDF)
 head(predictions)
 confusionMatrix(factor(predictions, levels = c("Excellent","Good","Average","Failed")),factor(testDF$performance, levels = c("Excellent","Good","Average","Failed")))
 
 ```
-The Balance accuracy is better with Random forest but still less than 50% for all performance
+The Balance accuracy is better with Random forest with 71.1% or accuray
            Excellent   Class           Average       Failed
-             0.48542   0.4981222       0.498517      0.498972
-             0.47812    0.497449      0.4996461      0.499147
+Balanced Accuracy             0.52578    0.502751       0.511204      0.541517
+Random forest is giving us the best accuracy of all three, altough, they are pretty close.
 
+
+## Plotting Classification and Regression Trees (CART)
+All three methods are giving us a close prediction accuracy of 71%.  To better understand the process, we will inspect Classification Trees deeper.
+```{r plottingcart, echo=FALSE}
+
+plot(fit.cart, scales = list(x = list(rot = 90)))
+
+```
+
+Accuracy decreases after CP = 0.00035.  Complexity Parameter is the minimum improvement in the model needed at each node. The cp value is a stopping parameter. It helps speed up the search for splits because it can identify splits that don’t meet this criteria and prune them before going too far.
+
+
+
+Let's look at the Tree how the decision is being calculated:
+```{r}
+
+prp(fit.cart$finalModel, box.palette = "Reds", tweak = 1.2)
+
+```
 
 ## Deployment
 Predicting outcome of an unseen data point
@@ -533,4 +590,10 @@ head(predictions)
 ```
 
 
+##Conclusion:
+
+Saving the model for the Shyniapp
+```{r}
+saveRDS(fit.cart,'jjts_cart_model')
+```
 
