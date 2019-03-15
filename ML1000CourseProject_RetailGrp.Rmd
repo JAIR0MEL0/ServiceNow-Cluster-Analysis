@@ -53,15 +53,10 @@ sdata=read.csv("~/desktop/ML/YORK/CourseProject/Support Tickets Dataset- ML.csv"
 
 ## Cleaning the data
 We will take care of duplicated, records with NA values, removing tickets that are not Resolved, as well as undertermine records, for example: Tickets with Support Level outside of the standards.
+
+
 ```{r cleaning, echo=FALSE}
 nrow(sdata)
-
-sdata <- select(sdata,-incident)
-sdata <- select(sdata,-cust_time)
-sdata <- select(sdata,-pend_time)
-sdata <- select(sdata,-call_log)
-sdata <- select(sdata,-chat_log)
-sdata <- select(sdata,-Closed)
 
 #Make sure there are no NA entries.
 sum(is.na(sdata))  #0
@@ -76,6 +71,15 @@ sum(!complete.cases(sdata))
 
 #Removing any other groups that re not under ITSM Governance
 sdata <- subset(sdata, grp_level=='Level 1' | grp_level=='Level 2' | grp_level=='Level 3')
+nrow(sdata)
+```
+
+Now we will ensure no data issues to reduce the risk of miss interpretation
+We need to remove any of observation if any of the below is greater than 0 Zero
+
+```{r sum_zero, echo=FALSE}
+
+#Adding validation to avoid data issues
 sum(sdata$opened == "")
 sum(sdata$application == "")
 sum(sdata$region == "")
@@ -83,19 +87,17 @@ sum(sdata$prod_line == "")
 sum(sdata$app_category == "")
 sum(sdata$priority == "")
 sum(sdata$sup_grp == "")
-
 sum(sdata$grp_level == "")  #1
 #Remove rows with blanks
 sdata <- sdata[which(sdata$grp_level != "" ),]
-
 sum(sdata$res_category == "") #1
 #Remove rows with blanks
 sdata <- sdata[which(sdata$res_category != "" ),]
-
 sum(sdata$opened == "")
 sum(sdata$urgency == "")
 sum(sdata$impact == "")
-nrow(sdata)
+
+
 ```
 
 
@@ -228,9 +230,9 @@ print(pp)
 ```
 
 
-
-
 ## Data Preparation
+
+
 Below attributes will be removed from the Dataset due to the low analytical value:
 Incident: This is the ID of the ticket.  We only use it to ensure there are not duplicates.
 cust_time: We will focus on the time that the ticket is resolved, customer time with other teams is not relevant for our analysis
@@ -238,6 +240,22 @@ Pend_time: We will focus on the time that the ticket is resolved, pending time w
 call_log: This feature is not used mainly; while Support team uses Skype IM
 chat_log: Less than 1% of the tickets are manages through chat from ServiceNow; support team usually use Skype IM, which is not recorded in the dataset.
 Closed:  We will focus our analysis on Resolved tickets, close is an automatic process happening 12 days after the ticket was resolved.
+
+Here is the final data set
+```{r removefield, echo=FALSE}
+
+#Remove irrelevant features
+sdata <- select(sdata,-incident)
+sdata <- select(sdata,-cust_time)
+sdata <- select(sdata,-pend_time)
+sdata <- select(sdata,-call_log)
+sdata <- select(sdata,-chat_log)
+sdata <- select(sdata,-Closed)
+#Ensuring all the observations are valid
+sdata <- na.omit(sdata)
+str(sdata)
+
+```
 
 ## New Numeric Variables
 We are now creating Numeric representation of 
@@ -369,25 +387,24 @@ sdata <- subset(sdata,!region %in% rare_levels)
 sdata$region <- factor(sdata$region)
 
 summary(sdata)
-#17410
 nrow(sdata)
-
 ```
 
 
 ## Calculating Performance
-We are rating the servcies provided by the vendor the following way:
-Excellent:  All P1, P2 or P3 tickets resolved within 1 day
-Good:       For P2 tickets resolved within 5 Days
-Average:    For P2 or P1 Tickets resolved within 10 days
+We are rating the servcies provided by the vendor the following table where the numbers are the days expected to have the issue resolved.
+
+Priority  |P1  |P2  | P3
+--------------------------
+Excellent | 5  | 3  | 1
+Good      |10  | 5  | 3
+Average   |15  |10  | 5
+
 Failed:     For any other ticket is considered Bad performance is rated as failed service.
-- P3 resolved in more than 1 day
-- P2 resolved in more than 5 days
-- P1 resolved in more than 10 days
 
 ```{r performance, echo=FALSE}
 
-sdata$performance <- ifelse(sdata$ndays < 1, "Excellent", ifelse(sdata$priorityN == 2 & sdata$ndays <= 5, "Good", ifelse(sdata$priorityN <= 2 & sdata$ndays <= 10, "Average", "Failed")))
+sdata$performance <- ifelse(sdata$ndays < 1, "Excellent", ifelse(sdata$ndays < 3 & sdata$priorityN <= 2, "Excellent", ifelse(sdata$ndays < 5 & sdata$priorityN < 2, "Excellent",ifelse(sdata$ndays < 3, "Good", ifelse(sdata$ndays < 5 & sdata$priorityN <= 2, "Good", ifelse(sdata$ndays < 10 & sdata$priorityN < 2, "Good", ifelse(sdata$ndays < 5, "Average", ifelse(sdata$ndays < 10 & sdata$priorityN <= 2, "Average", ifelse(sdata$ndays < 15 & sdata$priorityN < 2, "Average","Failed")))))))))
 
 sdata$performance <- factor(sdata$performance)
 
@@ -399,11 +416,8 @@ lbls <- paste(names(pieGRP), "\n", sep="")
 lbls <- paste(lbls,pct) # add percents to labels 
 lbls <- paste(lbls,"%",sep="") # ad % to labels 
 pie(pieGRP,labels = lbls, col=rainbow(length(lbls)),main="Performance")
-#pieGRP
 
 ```
-
-
 
 
 # Supervised Learning
@@ -419,13 +433,9 @@ Finally, Resolution category is unknown as we don't know what the issue is.  We 
 ```{r checkingPredictors, echo=FALSE}
 set.seed(719)
 
-rfImp <- randomForest(performance ~ priorityN + levelN + app_category + region + impactN + prod_line + impactN , data = sdata, ntree = 100, importance = TRUE)
+rfImp <- randomForest(performance ~ priorityN + levelN + app_category + region + impactN + prod_line, data = sdata, ntree = 100, importance = TRUE)
 importance(rfImp,type=2)
 ```
-
-
-
-
 
 As shown in the table, Product Line has the lowest predictable power.  Understandable because there is only two Product Lines; and the decision is either one of the other.  Very limited predictibility power.
 
@@ -439,7 +449,7 @@ Priority, Support Level, App Category, Resolution Category, Region
 
 ```{r regTree, echo=FALSE}
 
-TSdata <- sdata[,c("priorityN", "levelN" , "app_category" , "region", "impactN", "performance")]
+TSdata <- sdata[,c("priorityN", "levelN" , "app_category" , "region", "impactN","prod_line", "performance")]
 
 #write.csv(TSdata,'TSdata.csv')
 
@@ -447,98 +457,80 @@ splitIndex <- createDataPartition(TSdata[,'performance'], p = .75, list = FALSE,
 trainDF <- TSdata[ splitIndex,]
 testDF  <- TSdata[-splitIndex,]
 
+```
+All Algorithms
+
+```{r Nonlinear, echo=FALSE}
 set.seed(152)
-
-rparTree <- rpart(performance ~ ., data=trainDF, control = rpart.control(cp = 0.0001))
-
-printcp(rparTree)
-
+trctl <- trainControl(method = 'cv', number = 20, savePredictions = TRUE)
+metric <- "Accuracy"
+fit.lda <- train(performance ~ ., data=trainDF, method="lda", metric=metric, trControl=trctl)
+fit.cart <- train(performance ~ ., data=trainDF, method="rpart", metric=metric, trControl=trctl)
+fit.rf <- train(performance ~ ., data=trainDF, method="rf", metric=metric, trControl=trctl)
 ```
 
+As per the table; the mean accuracy of random forest is the highest of all the three algorithms.
 
-The tree has a misclassification rate of 0.66669 * 0.52531 * 100% = 35% in cross-validation (65% of prediction accuracy). 
-
-## Pruning and ploting model
-
-We now pick the tree size that minimizes prediction error which is a misclassification rate
-Prediction error rate in training data = Root node error * rel error * 100%
-Prediction error rate in cross-validation = Root node error * xerror * 100%
-We want the cp value that minimizes the xerror
-```{r treePruned, echo=FALSE}
-bestcp <- rparTree$cptable[which.min(rparTree$cptable[,"xerror"]),"CP"]
-#Prune the tree using the best cp.
-rparTree.pruned <- prune(rparTree, cp = bestcp)
-plot(rparTree.pruned)
-text(rparTree.pruned, cex = 0.8, use.n = TRUE, xpd = TRUE)
-
+```{r}
+results <- resamples(list(lda=fit.lda, cart=fit.cart, rf=fit.rf))
+summary(results)
 ```
-## Confusion Matrix for Training data
-
-```{r confusionTable, echo=FALSE}
-
-#show the confusion matrix we had 
-
-conf.matrix <- table(trainDF$performance, predict(rparTree.pruned,type="class"))
-rownames(conf.matrix) <- paste("Actual", rownames(conf.matrix), sep = ":")
-colnames(conf.matrix) <- paste("Pred", colnames(conf.matrix), sep = ":")
-print(conf.matrix)
+## Visualize the accuracy of the models of the Training
+```{r}
+dotplot(results)
 ```
 
-## Ploting the Tree Pruned
+The most important metric is prediction on the Testing data
 
-```{r modeDetail, echo=FALSE}
-prp(rparTree.pruned, faclen = 0, cex = 0.8, extra = 1)
-```
+##Let's make a prediction (accuracy of testing dataset)
 
-##Let's test the model (accuracy of testing dataset)
-
-#a) Classification Tree / Recursive Partitioning and Confusion Matrix
-
-```{r prediction, echo=FALSE}
-summary(testDF$performance)
-predictions <- predict(rparTree, testDF)
-
-summary(predictions)
+a) Linear Discriminant Analysis and Confusion Matrix
+```{r}
+predictions <- predict(fit.lda, testDF)
 head(predictions)
-#confusionMatrix(predictions, testDF$performance)
+confusionMatrix(factor(predictions, levels = c("Excellent","Good","Average","Failed")),factor(testDF$performance, levels = c("Excellent","Good","Average","Failed")))
 
 ```
+The Balance accuracy is less than 50% for all performance
+           Excellent   Class           Average       Failed
+             0.48542   0.4981222       0.498517      0.498972
 
-Ploting the Tree in black in White in case of not having a Color printer
-```{r plotTree, echo=FALSE}
+is too low.
 
-tot_count <- function(x, labs, digits, varlen)
-{
-  paste(labs, "\n\nn =", x$frame$n)
-}
+b) Classification Tree / Recursive Partitioning and Confusion Matrix
+```{r}
+predictions <- predict(fit.cart, testDF)
+head(predictions)
+confusionMatrix(factor(predictions, levels = c("Excellent","Good","Average","Failed")),factor(testDF$performance, levels = c("Excellent","Good","Average","Failed")))
+```
+The Balance accuracy is less than 50% for all performance
+           Excellent   Class           Average       Failed
+             0.48542   0.4981222       0.498517      0.498972
+is the same as LDA.
 
-prp(rparTree.pruned, faclen = 0, cex = 0.8, node.fun=tot_count)
+
+c) Final algorithm Random Forest and confusion matrix
+```{r}
+predictions <- predict(fit.rf, testDF)
+head(predictions)
+confusionMatrix(factor(predictions, levels = c("Excellent","Good","Average","Failed")),factor(testDF$performance, levels = c("Excellent","Good","Average","Failed")))
 
 ```
+The Balance accuracy is better with Random forest but still less than 50% for all performance
+           Excellent   Class           Average       Failed
+             0.48542   0.4981222       0.498517      0.498972
+             0.47812    0.497449      0.4996461      0.499147
 
-Adding color to the Tree for each Performance
-
-```{r plotColors, echo=FALSE}
-
-only_count <- function(x, labs, digits, varlen)
-{
-  paste(x$frame$n)
-}
-
-boxcols <- c("palegreen3", "blue", "white","pink")[rparTree.pruned$frame$yval]
-
-par(xpd=TRUE)
-prp(rparTree.pruned, faclen = 0, cex = 0.8, node.fun=only_count, box.col = boxcols)
-legend("bottomleft", legend = c("Excellent","Good","Average","Failed"), fill = c("palegreen3", "blue", "white","pink"),
-       title = "Performance")
-
-```
 
 ## Deployment
 Predicting outcome of an unseen data point
 ```{r deployment, echo=FALSE}
-xnew = sdata[21170,c('priorityN','app_category','levelN','region','impactN')]
-predict(rparTree,xnew)
-
+xnew = sdata[5000,c("priorityN","app_category","levelN","region","impactN","prod_line")]
+predictions <- predict(fit.rf,xnew)
+xnew$priorityN
+head(predictions)
 
 ```
+
+
+
