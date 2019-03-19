@@ -49,12 +49,11 @@ chat_log: If of the chat session when user uses instance message with the suppor
 Business problem:
 JnJ ITS is looking for alternatives to improve support services reducing the number of incidents, the time for resolution, and reduccion of the support cost using shift-left mechanism or any other suggestions that ML could uncover.  Support Vendors always inquiring about predicting support so they can scalate their services based on their workforce.
 
-1. Prediction to forecast demand
-2. Clustering to find out ways to reduce incidents
-3. Find patterns to uncover ways to increase more online chats
+1. Prediction to forecast demand - Preducting the Group Level of the support team who will be engaged
+2. Improving customer experience with more accurate prediction when the issue will be resolved.
+3. Find out ways to reduce missing SLA (Performance = Failed)
 4. Ways to move from L3 to L1 support
-5. Consolidation or reduccion of Support Groups, which will translate into less vendors.
-6. Look for ways to become more preventive and less reactive. Identify causes and club incidents that could reduce reactivive.  This means relability.
+5. Look for ways to become more preventive and less reactive identified when the Support team should expect being engaged
 
 ## Data understanding
 
