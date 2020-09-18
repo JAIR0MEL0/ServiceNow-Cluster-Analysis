@@ -1,4 +1,4 @@
-# Clustering Analysis for Service Desk and Incident tickets ServiceOne
+# Clustering Analysis for Service Desk and Incident tickets ServiceNow
 This repository will support all elements to complete analysis of the ServiceNow Data Set
 
 ## About the Dataset
