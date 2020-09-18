@@ -1,5 +1,5 @@
-# CourseProject
-This repository will support all elements to complete the Project Course
+# Clustering Analysis for Service Desk and Incident tickets ServiceOne
+This repository will support all elements to complete analysis of the ServiceNow Data Set
 
 ## About the Dataset
 This are all Support tickets generated for two Support Groups across all the regions.  18 Columns with 20k records from 2018 and 2019.
